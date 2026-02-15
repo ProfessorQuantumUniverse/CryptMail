@@ -78,7 +78,7 @@ async function run() {
   console.log("\ndefault rounds:");
   const armored100 = await CryptMail.encrypt("Test default", "pw123");
   const dec100 = await CryptMail.decrypt(armored100, "pw123");
-  assert(dec100 === "Test default", "round-trip default (100) rounds matches");
+  assert(dec100 === "Test default", "round-trip default (1) rounds matches");
 
   // --- wrong passphrase ---
   console.log("\nwrong passphrase:");
@@ -142,6 +142,34 @@ async function run() {
   const armoredNoProg = await CryptMail.encrypt("no progress", "key", 3);
   const decNoProg = await CryptMail.decrypt(armoredNoProg, "key");
   assert(decNoProg === "no progress", "round-trip without progress callback works");
+
+  // --- subject encryption ---
+  console.log("\nsubject encryption:");
+  const subjectToken = await CryptMail.encryptSubject("Meeting tomorrow", "secret");
+  assert(subjectToken.startsWith(CryptMail.SUBJECT_PREFIX), "subject token has [CM] prefix");
+  assert(CryptMail.isSubjectEncrypted(subjectToken), "isSubjectEncrypted recognises token");
+  assert(!CryptMail.isSubjectEncrypted("Normal subject"), "isSubjectEncrypted rejects plain text");
+
+  const subjectPlain = await CryptMail.decryptSubject(subjectToken, "secret");
+  assert(subjectPlain === "Meeting tomorrow", "subject round-trip matches");
+
+  // Subject token must be short enough for email subject lines
+  assert(subjectToken.length < 250, "subject token fits in ~250 chars (got " + subjectToken.length + ")");
+
+  // Wrong passphrase on subject should throw
+  let subjectWrongKey = false;
+  try {
+    await CryptMail.decryptSubject(subjectToken, "wrong");
+  } catch {
+    subjectWrongKey = true;
+  }
+  assert(subjectWrongKey, "subject decryption with wrong key throws");
+
+  // Unicode subject
+  const uniSubject = "Ünîcödé 🎉";
+  const uniSubToken = await CryptMail.encryptSubject(uniSubject, "key");
+  const uniSubDec = await CryptMail.decryptSubject(uniSubToken, "key");
+  assert(uniSubDec === uniSubject, "unicode subject round-trip matches");
 
   // --- summary ---
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -15,7 +15,7 @@
   const DECRYPT_BTN_ATTR = "data-cryptmail-btn";
   const BUTTON_CLASS = "cryptmail-send-btn";
   const SCAN_INTERVAL_MS = 2000;
-  const SUBJECT_PREFIX = "🔒 [CryptMail]";
+  const SUBJECT_PREFIX = "🔒 ";
 
   /* ---- Welcome screen (first-run) ---- */
 
@@ -98,6 +98,57 @@
   function hideProgressBar() {
     const container = document.getElementById("cryptmail-progress");
     if (container) container.style.display = "none";
+  }
+
+  /* ---- Inline passphrase prompt ---- */
+
+  /**
+   * Show a modal prompt asking the user for a passphrase for the given contact.
+   * Returns the entered passphrase, or null if cancelled.
+   */
+  function showPassphrasePrompt(email) {
+    return new Promise((resolve) => {
+      const safeEmail = email.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const overlay = document.createElement("div");
+      overlay.className = "cryptmail-welcome-overlay";
+      overlay.innerHTML = `
+        <div class="cryptmail-welcome-card">
+          <div class="cryptmail-welcome-header">🔑 Passphrase Required</div>
+          <div class="cryptmail-welcome-body">
+            <p>No shared passphrase found for <strong>${safeEmail}</strong>.</p>
+            <p>Enter the passphrase you agreed on with this contact. It will be saved for future messages.</p>
+            <input type="password" id="cryptmail-prompt-pw"
+              placeholder="Shared passphrase"
+              style="width:100%;padding:8px 10px;border:1px solid #dadce0;border-radius:4px;font-size:14px;margin-top:8px;">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            <button id="cryptmail-prompt-cancel"
+              style="flex:1;padding:10px;border:1px solid #dadce0;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;">Cancel</button>
+            <button id="cryptmail-prompt-ok"
+              style="flex:1;padding:10px;border:none;border-radius:6px;background:#1a73e8;color:#fff;cursor:pointer;font-size:14px;font-weight:500;">Save &amp; Encrypt</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      const pwInput = document.getElementById("cryptmail-prompt-pw");
+      pwInput.focus();
+      document.getElementById("cryptmail-prompt-ok").addEventListener("click", () => {
+        const val = pwInput.value;
+        overlay.remove();
+        resolve(val || null);
+      });
+      document.getElementById("cryptmail-prompt-cancel").addEventListener("click", () => {
+        overlay.remove();
+        resolve(null);
+      });
+      pwInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          const val = pwInput.value;
+          overlay.remove();
+          resolve(val || null);
+        }
+      });
+    });
   }
 
   /* ---- Compose integration ---- */
@@ -192,27 +243,34 @@
       return;
     }
 
-    const passphrase = await KeyStore.getKey(recipient);
+    if (!(await ensureUnlocked())) return;
+
+    let passphrase = await KeyStore.getKey(recipient);
     if (!passphrase) {
-      showNotification(
-        `No key found for ${recipient}. Add one in the CryptMail popup.`,
-        true
-      );
-      return;
+      passphrase = await showPassphrasePrompt(recipient);
+      if (!passphrase) return;
+      await KeyStore.setKey(recipient, passphrase);
     }
 
     try {
       const updateProgress = createProgressBar("🔒 Encrypting message…");
       const encrypted = await CryptMail.encrypt(plaintext, passphrase, undefined, updateProgress);
-      body.innerText = encrypted;
 
-      // Optionally encrypt the subject
+      // Wrap the envelope in natural-looking text to reduce spam-filter triggers
+      body.innerText =
+        "This message is secured with CryptMail (end-to-end encrypted).\n" +
+        "To read it, please install the CryptMail extension.\n\n" +
+        encrypted +
+        "\n\nThis is an automated encryption envelope. " +
+        "If you cannot decrypt it, ask the sender for the CryptMail extension.";
+
+      // Optionally encrypt the subject using the compact format
       if (encryptSubject) {
         const subjectInput = getSubjectInput(composeEl);
         if (subjectInput && subjectInput.value.trim()) {
           const subjectPlain = subjectInput.value.trim();
-          const encryptedSubject = await CryptMail.encrypt(subjectPlain, passphrase);
-          subjectInput.value = SUBJECT_PREFIX + " " + encryptedSubject;
+          const encryptedSubject = await CryptMail.encryptSubject(subjectPlain, passphrase);
+          subjectInput.value = SUBJECT_PREFIX + encryptedSubject;
           // Dispatch input event so Gmail picks up the change
           subjectInput.dispatchEvent(new Event("input", { bubbles: true }));
         }
@@ -232,6 +290,7 @@
   /**
    * Scan visible message bodies and add a "Decrypt" button for CryptMail envelopes.
    * Decryption only happens when the user clicks the button.
+   * If no passphrase is stored for the sender, the user is prompted inline.
    */
   async function scanAndShowDecryptButton() {
     const messageBodies = document.querySelectorAll(
@@ -253,9 +312,6 @@
 
       if (!senderEmail) continue;
 
-      const passphrase = await KeyStore.getKey(senderEmail);
-      if (!passphrase) continue;
-
       el.setAttribute(DECRYPT_BTN_ATTR, "true");
 
       // Extract the armored block for later use
@@ -270,6 +326,15 @@
       decryptBtn.className = "cryptmail-decrypt-btn";
       decryptBtn.textContent = "🔓 Decrypt Message";
       decryptBtn.addEventListener("click", async () => {
+        if (!(await ensureUnlocked())) return;
+
+        let passphrase = await KeyStore.getKey(senderEmail);
+        if (!passphrase) {
+          passphrase = await showPassphrasePrompt(senderEmail);
+          if (!passphrase) return;
+          await KeyStore.setKey(senderEmail, passphrase);
+        }
+
         decryptBtn.disabled = true;
         decryptBtn.textContent = "Decrypting…";
 
@@ -304,6 +369,24 @@
 
           el.appendChild(toggleBtn);
           el.appendChild(clearDiv);
+
+          // Also try to decrypt the subject if it is encrypted
+          try {
+            const subjectEl =
+              el.closest('[data-message-id]')?.querySelector('h2') ||
+              el.closest('.gs')?.querySelector('h2');
+            if (subjectEl) {
+              const subjectText = subjectEl.textContent.trim();
+              if (subjectText.includes(CryptMail.SUBJECT_PREFIX)) {
+                const cmIdx = subjectText.indexOf(CryptMail.SUBJECT_PREFIX);
+                const token = subjectText.substring(cmIdx);
+                const plainSubject = await CryptMail.decryptSubject(token, passphrase);
+                subjectEl.textContent = "🔓 " + plainSubject;
+              }
+            }
+          } catch (_) {
+            // Subject decryption is best-effort; ignore failures silently
+          }
         } catch (err) {
           hideProgressBar();
           decryptBtn.disabled = false;
@@ -315,6 +398,61 @@
 
       el.insertBefore(decryptBtn, el.firstChild);
     }
+  }
+
+  /* ---- Master password prompt (content script) ---- */
+
+  /**
+   * Ensure the KeyStore is unlocked. If not, shows a prompt for the master password.
+   * Returns true if unlocked, false if the user cancelled.
+   */
+  async function ensureUnlocked() {
+    if (KeyStore.isUnlocked()) return true;
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "cryptmail-welcome-overlay";
+      overlay.innerHTML = `
+        <div class="cryptmail-welcome-card">
+          <div class="cryptmail-welcome-header">🔑 CryptMail Locked</div>
+          <div class="cryptmail-welcome-body">
+            <p>Enter your <strong>master password</strong> to unlock your stored keys.</p>
+            <input type="password" id="cryptmail-master-pw"
+              placeholder="Master password"
+              style="width:100%;padding:8px 10px;border:1px solid #dadce0;border-radius:4px;font-size:14px;margin-top:8px;">
+            <div id="cryptmail-master-err" style="color:#d93025;font-size:12px;margin-top:6px;min-height:16px;"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button id="cryptmail-master-cancel"
+              style="flex:1;padding:10px;border:1px solid #dadce0;border-radius:6px;background:#fff;cursor:pointer;font-size:14px;">Cancel</button>
+            <button id="cryptmail-master-ok"
+              style="flex:1;padding:10px;border:none;border-radius:6px;background:#1a73e8;color:#fff;cursor:pointer;font-size:14px;font-weight:500;">Unlock</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      const pwInput = document.getElementById("cryptmail-master-pw");
+      const errEl = document.getElementById("cryptmail-master-err");
+      pwInput.focus();
+
+      async function tryUnlock() {
+        const pw = pwInput.value;
+        if (!pw) { errEl.textContent = "Please enter a password."; return; }
+        const ok = await KeyStore.unlock(pw);
+        if (ok) {
+          overlay.remove();
+          resolve(true);
+        } else {
+          errEl.textContent = "Wrong master password.";
+        }
+      }
+
+      document.getElementById("cryptmail-master-ok").addEventListener("click", tryUnlock);
+      pwInput.addEventListener("keydown", (e) => { if (e.key === "Enter") tryUnlock(); });
+      document.getElementById("cryptmail-master-cancel").addEventListener("click", () => {
+        overlay.remove();
+        resolve(false);
+      });
+    });
   }
 
   /* ---- Notifications ---- */
