@@ -1,0 +1,11 @@
+{
+  "name": "cryptmail",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-layer AES-GCM encryption Chrome extension for Gmail",
+  "scripts": {
+    "test": "node test/crypto.test.js"
+  },
+  "devDependencies": {},
+  "license": "GPL-3.0"
+}
