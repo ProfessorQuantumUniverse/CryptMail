@@ -2,8 +2,9 @@
  * CryptMail – Gmail Content Script
  *
  * Observes the Gmail DOM for:
- *   1. Compose windows  → adds an "Encrypt & Send" button.
- *   2. Message bodies    → auto-decrypts CryptMail envelopes inline.
+ *   1. Compose windows  → adds "Encrypt" button + optional subject encryption.
+ *   2. Message bodies    → shows a "Decrypt" button for CryptMail envelopes.
+ *   3. First-run welcome screen for new users.
  */
 
 (() => {
@@ -11,8 +12,93 @@
 
   /* ---- Constants ---- */
   const DECRYPT_ATTR = "data-cryptmail-decrypted";
+  const DECRYPT_BTN_ATTR = "data-cryptmail-btn";
   const BUTTON_CLASS = "cryptmail-send-btn";
   const SCAN_INTERVAL_MS = 2000;
+  const SUBJECT_PREFIX = "🔒 [CryptMail]";
+
+  /* ---- Welcome screen (first-run) ---- */
+
+  function showWelcomeScreen() {
+    if (document.getElementById("cryptmail-welcome")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "cryptmail-welcome";
+    overlay.className = "cryptmail-welcome-overlay";
+
+    overlay.innerHTML = `
+      <div class="cryptmail-welcome-card">
+        <div class="cryptmail-welcome-header">🔒 Welcome to CryptMail!</div>
+        <div class="cryptmail-welcome-body">
+          <p><strong>CryptMail</strong> adds multi-layer AES-256 encryption to your Gmail messages.</p>
+          <div class="cryptmail-welcome-steps">
+            <div class="cryptmail-welcome-step">
+              <span class="cryptmail-step-num">1</span>
+              <span>Click the <strong>CryptMail icon</strong> in your toolbar to add a shared passphrase for a contact.</span>
+            </div>
+            <div class="cryptmail-welcome-step">
+              <span class="cryptmail-step-num">2</span>
+              <span>Compose an email and click <strong>"🔒 Encrypt"</strong> to encrypt before sending.</span>
+            </div>
+            <div class="cryptmail-welcome-step">
+              <span class="cryptmail-step-num">3</span>
+              <span>When you receive an encrypted message, click <strong>"🔓 Decrypt"</strong> to read it.</span>
+            </div>
+          </div>
+          <p class="cryptmail-welcome-note">💡 <strong>Tip:</strong> You can also encrypt the subject line with the checkbox in the compose window. Share the passphrase with your contact securely (in person, via Signal, etc.).</p>
+        </div>
+        <button class="cryptmail-welcome-close" id="cryptmail-welcome-close">Got it – Let's go!</button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("cryptmail-welcome-close").addEventListener("click", () => {
+      overlay.remove();
+      chrome.storage.local.set({ cryptmail_welcomed: true });
+    });
+  }
+
+  function checkFirstRun() {
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get("cryptmail_welcomed", (result) => {
+        if (!result.cryptmail_welcomed) {
+          showWelcomeScreen();
+        }
+      });
+    }
+  }
+
+  /* ---- Progress bar ---- */
+
+  function createProgressBar(label) {
+    let container = document.getElementById("cryptmail-progress");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "cryptmail-progress";
+      container.className = "cryptmail-progress-container";
+      document.body.appendChild(container);
+    }
+    container.innerHTML = `
+      <div class="cryptmail-progress-label">${label}</div>
+      <div class="cryptmail-progress-track">
+        <div class="cryptmail-progress-bar" id="cryptmail-progress-bar"></div>
+      </div>
+      <div class="cryptmail-progress-percent" id="cryptmail-progress-percent">0%</div>
+    `;
+    container.style.display = "flex";
+    return (percent) => {
+      const bar = document.getElementById("cryptmail-progress-bar");
+      const pct = document.getElementById("cryptmail-progress-percent");
+      if (bar) bar.style.width = percent + "%";
+      if (pct) pct.textContent = percent + "%";
+    };
+  }
+
+  function hideProgressBar() {
+    const container = document.getElementById("cryptmail-progress");
+    if (container) container.style.display = "none";
+  }
 
   /* ---- Compose integration ---- */
 
@@ -43,7 +129,15 @@
   }
 
   /**
-   * Inject the "Encrypt & Send" button into a compose toolbar.
+   * Get the subject input element inside a Gmail compose window.
+   */
+  function getSubjectInput(composeEl) {
+    return composeEl.querySelector('input[name="subjectbox"]') ||
+           composeEl.querySelector('input[aria-label="Subject"]');
+  }
+
+  /**
+   * Inject the "Encrypt" button, subject-encrypt checkbox, into a compose toolbar.
    */
   function injectButton(composeEl) {
     if (composeEl.querySelector("." + BUTTON_CLASS)) return;
@@ -52,22 +146,34 @@
                     composeEl.querySelector(".btC");
     if (!toolbar) return;
 
+    // Subject encryption checkbox
+    const checkboxWrap = document.createElement("label");
+    checkboxWrap.className = "cryptmail-subject-label";
+    checkboxWrap.title = "Also encrypt the email subject line";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "cryptmail-subject-checkbox";
+    checkboxWrap.appendChild(checkbox);
+    checkboxWrap.appendChild(document.createTextNode(" Encrypt subject"));
+    toolbar.appendChild(checkboxWrap);
+
     const btn = document.createElement("button");
     btn.className = BUTTON_CLASS;
-    btn.textContent = "🔒 Encrypt & Send";
-    btn.title = "Encrypt the message with CryptMail, then send";
+    btn.textContent = "🔒 Encrypt";
+    btn.title = "Encrypt the message with CryptMail";
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      handleEncryptAndSend(composeEl);
+      handleEncrypt(composeEl, checkbox.checked);
     });
     toolbar.appendChild(btn);
   }
 
   /**
-   * Handler for the "Encrypt & Send" button.
+   * Handler for the "Encrypt" button.
+   * Encrypts the body (and optionally subject), then prompts user to send manually.
    */
-  async function handleEncryptAndSend(composeEl) {
+  async function handleEncrypt(composeEl, encryptSubject) {
     const body = getComposeBody(composeEl);
     if (!body) {
       showNotification("Could not find compose body.", true);
@@ -96,19 +202,26 @@
     }
 
     try {
-      showNotification("Encrypting…");
-      const encrypted = await CryptMail.encrypt(plaintext, passphrase);
+      const updateProgress = createProgressBar("🔒 Encrypting message…");
+      const encrypted = await CryptMail.encrypt(plaintext, passphrase, undefined, updateProgress);
       body.innerText = encrypted;
-      showNotification("Encrypted! Click Gmail's Send button to send.");
 
-      // Simulate clicking Gmail's native send button
-      const sendBtn =
-        composeEl.querySelector('[role="button"][data-tooltip*="Send"]') ||
-        composeEl.querySelector('[aria-label*="Send"]');
-      if (sendBtn) {
-        sendBtn.click();
+      // Optionally encrypt the subject
+      if (encryptSubject) {
+        const subjectInput = getSubjectInput(composeEl);
+        if (subjectInput && subjectInput.value.trim()) {
+          const subjectPlain = subjectInput.value.trim();
+          const encryptedSubject = await CryptMail.encrypt(subjectPlain, passphrase);
+          subjectInput.value = SUBJECT_PREFIX + " " + encryptedSubject;
+          // Dispatch input event so Gmail picks up the change
+          subjectInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
       }
+
+      hideProgressBar();
+      showNotification("✅ Encrypted! Please click Gmail's Send button to send the message.");
     } catch (err) {
+      hideProgressBar();
       console.error("CryptMail encryption error:", err);
       showNotification("Encryption failed: " + err.message, true);
     }
@@ -117,15 +230,17 @@
   /* ---- Decryption of received messages ---- */
 
   /**
-   * Scan visible message bodies and decrypt any CryptMail envelopes found.
+   * Scan visible message bodies and add a "Decrypt" button for CryptMail envelopes.
+   * Decryption only happens when the user clicks the button.
    */
-  async function scanAndDecrypt() {
+  async function scanAndShowDecryptButton() {
     const messageBodies = document.querySelectorAll(
       '.a3s.aiL, .a3s.aXjCH, div[data-message-id] .a3s'
     );
 
     for (const el of messageBodies) {
       if (el.getAttribute(DECRYPT_ATTR)) continue;
+      if (el.getAttribute(DECRYPT_BTN_ATTR)) continue;
 
       const text = el.innerText;
       if (!CryptMail.isEncrypted(text)) continue;
@@ -141,46 +256,64 @@
       const passphrase = await KeyStore.getKey(senderEmail);
       if (!passphrase) continue;
 
-      try {
-        // Extract just the armored block
-        const start = text.indexOf(CryptMail.ENVELOPE_PREFIX);
-        const suffixIdx = text.indexOf(CryptMail.ENVELOPE_SUFFIX);
-        if (start === -1 || suffixIdx === -1) continue;
-        const end = suffixIdx + CryptMail.ENVELOPE_SUFFIX.length;
-        const armored = text.substring(start, end);
+      el.setAttribute(DECRYPT_BTN_ATTR, "true");
 
-        const decrypted = await CryptMail.decrypt(armored, passphrase);
+      // Extract the armored block for later use
+      const start = text.indexOf(CryptMail.ENVELOPE_PREFIX);
+      const suffixIdx = text.indexOf(CryptMail.ENVELOPE_SUFFIX);
+      if (start === -1 || suffixIdx === -1) continue;
+      const end = suffixIdx + CryptMail.ENVELOPE_SUFFIX.length;
+      const armored = text.substring(start, end);
 
-        el.setAttribute(DECRYPT_ATTR, "true");
+      // Insert a decrypt button at the top
+      const decryptBtn = document.createElement("button");
+      decryptBtn.className = "cryptmail-decrypt-btn";
+      decryptBtn.textContent = "🔓 Decrypt Message";
+      decryptBtn.addEventListener("click", async () => {
+        decryptBtn.disabled = true;
+        decryptBtn.textContent = "Decrypting…";
 
-        // Replace content, preserving a toggle to view raw
-        const original = el.innerHTML;
-        el.innerHTML = "";
+        try {
+          const updateProgress = createProgressBar("🔓 Decrypting message…");
+          const decrypted = await CryptMail.decrypt(armored, passphrase, updateProgress);
+          hideProgressBar();
 
-        const clearDiv = document.createElement("div");
-        clearDiv.className = "cryptmail-decrypted";
-        clearDiv.textContent = decrypted;
+          el.setAttribute(DECRYPT_ATTR, "true");
 
-        const toggleBtn = document.createElement("button");
-        toggleBtn.className = "cryptmail-toggle-btn";
-        toggleBtn.textContent = "Show encrypted";
-        let showingRaw = false;
-        toggleBtn.addEventListener("click", () => {
-          showingRaw = !showingRaw;
-          if (showingRaw) {
-            clearDiv.textContent = armored;
-            toggleBtn.textContent = "Show decrypted";
-          } else {
-            clearDiv.textContent = decrypted;
-            toggleBtn.textContent = "Show encrypted";
-          }
-        });
+          // Replace content, preserving a toggle to view raw
+          el.innerHTML = "";
 
-        el.appendChild(toggleBtn);
-        el.appendChild(clearDiv);
-      } catch (err) {
-        console.warn("CryptMail decryption failed for message from", senderEmail, err);
-      }
+          const clearDiv = document.createElement("div");
+          clearDiv.className = "cryptmail-decrypted";
+          clearDiv.textContent = decrypted;
+
+          const toggleBtn = document.createElement("button");
+          toggleBtn.className = "cryptmail-toggle-btn";
+          toggleBtn.textContent = "Show encrypted";
+          let showingRaw = false;
+          toggleBtn.addEventListener("click", () => {
+            showingRaw = !showingRaw;
+            if (showingRaw) {
+              clearDiv.textContent = armored;
+              toggleBtn.textContent = "Show decrypted";
+            } else {
+              clearDiv.textContent = decrypted;
+              toggleBtn.textContent = "Show encrypted";
+            }
+          });
+
+          el.appendChild(toggleBtn);
+          el.appendChild(clearDiv);
+        } catch (err) {
+          hideProgressBar();
+          decryptBtn.disabled = false;
+          decryptBtn.textContent = "🔓 Decrypt Message";
+          console.warn("CryptMail decryption failed for message from", senderEmail, err);
+          showNotification("Decryption failed: " + err.message, true);
+        }
+      });
+
+      el.insertBefore(decryptBtn, el.firstChild);
     }
   }
 
@@ -198,7 +331,7 @@
     container.style.display = "block";
     setTimeout(() => {
       container.style.display = "none";
-    }, 4000);
+    }, 5000);
   }
 
   /* ---- Observer ---- */
@@ -222,10 +355,13 @@
   // Periodic scan for new compose windows and encrypted messages
   setInterval(() => {
     scanCompose();
-    scanAndDecrypt();
+    scanAndShowDecryptButton();
   }, SCAN_INTERVAL_MS);
 
   // Initial scan
   scanCompose();
-  scanAndDecrypt();
+  scanAndShowDecryptButton();
+
+  // Check for first-run welcome screen
+  checkFirstRun();
 })();

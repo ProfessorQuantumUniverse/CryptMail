@@ -110,6 +110,31 @@
       min-height: 16px;
     }
     #status.error { color: #d93025; }
+    .welcome-banner {
+      background: #e8f0fe;
+      border: 1px solid #c6dafc;
+      border-radius: 6px;
+      padding: 10px 28px 10px 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #1a56b0;
+      position: relative;
+      line-height: 1.5;
+    }
+    .welcome-banner p { margin-bottom: 4px; }
+    .welcome-hint { color: #5f6368; font-size: 11px; }
+    .btn-dismiss {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: none;
+      border: none;
+      color: #5f6368;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+    }
+    .btn-dismiss:hover { color: #202124; }
     hr {
       border: none;
       border-top: 1px solid #e8eaed;
@@ -120,6 +145,12 @@
 <body>
   <h1>🔒 CryptMail</h1>
   <p class="subtitle">Multi-layer encrypted Gmail messaging</p>
+
+  <div id="welcome-banner" class="welcome-banner" style="display:none;">
+    <p><strong>Welcome!</strong> Add a contact key below to start sending encrypted messages.</p>
+    <p class="welcome-hint">Share the passphrase with your contact via a secure channel (in person, Signal, etc.).</p>
+    <button class="btn-dismiss" id="dismissWelcome">✕</button>
+  </div>
 
   <hr>
 
