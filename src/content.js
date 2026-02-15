@@ -144,8 +144,9 @@
       try {
         // Extract just the armored block
         const start = text.indexOf(CryptMail.ENVELOPE_PREFIX);
-        const end = text.indexOf(CryptMail.ENVELOPE_SUFFIX) +
-                    CryptMail.ENVELOPE_SUFFIX.length;
+        const suffixIdx = text.indexOf(CryptMail.ENVELOPE_SUFFIX);
+        if (start === -1 || suffixIdx === -1) continue;
+        const end = suffixIdx + CryptMail.ENVELOPE_SUFFIX.length;
         const armored = text.substring(start, end);
 
         const decrypted = await CryptMail.decrypt(armored, passphrase);

@@ -39,7 +39,7 @@ When you open an email containing a CryptMail envelope, the extension automatica
 ## Encryption Details
 
 - **Algorithm**: AES-256-GCM
-- **Key Derivation**: PBKDF2 with SHA-256, 600 000 iterations
+- **Key Derivation**: PBKDF2 with SHA-256, 600,000 iterations
 - **Rounds**: 100 (configurable) layers of encryption
 - **Randomness**: Each round uses a unique random 16-byte salt and 12-byte IV
 

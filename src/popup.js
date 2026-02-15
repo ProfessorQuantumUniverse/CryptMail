@@ -21,7 +21,13 @@
   }
 
   async function renderKeys() {
-    const keys = await KeyStore.listKeys();
+    let keys;
+    try {
+      keys = await KeyStore.listKeys();
+    } catch (err) {
+      showStatus("Failed to load keys: " + err.message, true);
+      return;
+    }
     const emails = Object.keys(keys);
 
     if (emails.length === 0) {
