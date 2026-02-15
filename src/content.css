@@ -1,6 +1,6 @@
 /* CryptMail – Content script styles */
 
-/* Encrypt & Send button */
+/* Encrypt button */
 .cryptmail-send-btn {
   background: #1a73e8;
   color: #fff;
@@ -20,6 +20,22 @@
   background: #1765cc;
 }
 
+/* Subject encryption checkbox */
+.cryptmail-subject-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 12px;
+  color: #5f6368;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cryptmail-subject-checkbox {
+  cursor: pointer;
+}
+
 /* Notification toast */
 .cryptmail-notify {
   position: fixed;
@@ -33,10 +49,82 @@
   z-index: 999999;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transition: opacity 0.3s;
+  max-width: 400px;
 }
 
 .cryptmail-notify.error {
   background: #d93025;
+}
+
+/* Progress bar */
+.cryptmail-progress-container {
+  position: fixed;
+  bottom: 70px;
+  right: 24px;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  z-index: 999999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 300px;
+}
+
+.cryptmail-progress-label {
+  font-size: 13px;
+  color: #202124;
+  white-space: nowrap;
+}
+
+.cryptmail-progress-track {
+  flex: 1;
+  height: 8px;
+  background: #e8eaed;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cryptmail-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #1a73e8, #4285f4);
+  border-radius: 4px;
+  transition: width 0.15s ease;
+}
+
+.cryptmail-progress-percent {
+  font-size: 12px;
+  color: #5f6368;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Decrypt button for received messages */
+.cryptmail-decrypt-btn {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+  margin-bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cryptmail-decrypt-btn:hover {
+  background: #1765cc;
+}
+
+.cryptmail-decrypt-btn:disabled {
+  background: #94baf7;
+  cursor: wait;
 }
 
 /* Decrypted message block */
@@ -63,4 +151,98 @@
 
 .cryptmail-toggle-btn:hover {
   background: #f1f3f4;
+}
+
+/* Welcome screen overlay */
+.cryptmail-welcome-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cryptmail-welcome-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+.cryptmail-welcome-header {
+  font-size: 22px;
+  font-weight: 600;
+  color: #202124;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.cryptmail-welcome-body {
+  font-size: 14px;
+  color: #3c4043;
+  line-height: 1.6;
+}
+
+.cryptmail-welcome-body p {
+  margin-bottom: 12px;
+}
+
+.cryptmail-welcome-steps {
+  margin: 16px 0;
+}
+
+.cryptmail-welcome-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cryptmail-step-num {
+  background: #1a73e8;
+  color: #fff;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.cryptmail-welcome-note {
+  background: #fef7e0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #5f6368;
+  margin-top: 8px;
+}
+
+.cryptmail-welcome-close {
+  display: block;
+  width: 100%;
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 20px;
+}
+
+.cryptmail-welcome-close:hover {
+  background: #1765cc;
 }

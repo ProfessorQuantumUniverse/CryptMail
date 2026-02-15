@@ -10,6 +10,26 @@
   const saveBtn = document.getElementById("saveBtn");
   const statusEl = document.getElementById("status");
   const keyListEl = document.getElementById("keyList");
+  const welcomeBanner = document.getElementById("welcome-banner");
+  const dismissWelcome = document.getElementById("dismissWelcome");
+
+  // Show welcome banner on first open
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get("cryptmail_popup_welcomed", (result) => {
+      if (!result.cryptmail_popup_welcomed) {
+        welcomeBanner.style.display = "block";
+      }
+    });
+  }
+
+  if (dismissWelcome) {
+    dismissWelcome.addEventListener("click", () => {
+      welcomeBanner.style.display = "none";
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ cryptmail_popup_welcomed: true });
+      }
+    });
+  }
 
   function showStatus(msg, isError) {
     statusEl.textContent = msg;

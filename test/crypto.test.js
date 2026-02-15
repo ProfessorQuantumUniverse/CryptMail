@@ -121,6 +121,28 @@ async function run() {
   const a2 = await CryptMail.encrypt("same", "key", 2);
   assert(a1 !== a2, "two encryptions of same text differ");
 
+  // --- progress callback for encrypt ---
+  console.log("\nprogress callback (encrypt):");
+  const encProgress = [];
+  await CryptMail.encrypt("progress test", "key", 5, (p) => encProgress.push(p));
+  assert(encProgress.length === 5, "encrypt progress called for each round");
+  assert(encProgress[encProgress.length - 1] === 100, "encrypt progress ends at 100%");
+  assert(encProgress[0] === Math.round(100 / 5), "encrypt first round reports correct percentage");
+
+  // --- progress callback for decrypt ---
+  console.log("\nprogress callback (decrypt):");
+  const armoredProg = await CryptMail.encrypt("progress test", "key", 5);
+  const decProgress = [];
+  await CryptMail.decrypt(armoredProg, "key", (p) => decProgress.push(p));
+  assert(decProgress.length === 5, "decrypt progress called for each round");
+  assert(decProgress[decProgress.length - 1] === 100, "decrypt progress ends at 100%");
+
+  // --- encrypt/decrypt without progress callback still works ---
+  console.log("\nno progress callback:");
+  const armoredNoProg = await CryptMail.encrypt("no progress", "key", 3);
+  const decNoProg = await CryptMail.decrypt(armoredNoProg, "key");
+  assert(decNoProg === "no progress", "round-trip without progress callback works");
+
   // --- summary ---
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

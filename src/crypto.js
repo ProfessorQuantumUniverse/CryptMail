@@ -77,8 +77,9 @@ const CryptMail = (() => {
   /**
    * Encrypt `plaintext` with `passphrase` for `rounds` layers.
    * Returns the armored envelope string.
+   * @param {function} [onProgress] – optional callback(percent) called after each round.
    */
-  async function encrypt(plaintext, passphrase, rounds) {
+  async function encrypt(plaintext, passphrase, rounds, onProgress) {
     if (!plaintext || !passphrase) {
       throw new Error("plaintext and passphrase are required");
     }
@@ -95,6 +96,7 @@ const CryptMail = (() => {
         await crypto.subtle.encrypt({ name: ALGO, iv }, key, current)
       );
       params.push({ salt: hexEncode(salt), iv: hexEncode(iv) });
+      if (onProgress) onProgress(Math.round(((i + 1) / rounds) * 100));
     }
 
     const envelope = {
@@ -112,8 +114,9 @@ const CryptMail = (() => {
   /**
    * Decrypt an armored envelope string with `passphrase`.
    * Returns the original plaintext.
+   * @param {function} [onProgress] – optional callback(percent) called after each round.
    */
-  async function decrypt(armored, passphrase) {
+  async function decrypt(armored, passphrase, onProgress) {
     if (!armored || !passphrase) {
       throw new Error("armored text and passphrase are required");
     }
@@ -130,6 +133,7 @@ const CryptMail = (() => {
     }
 
     let current = hexDecode(envelope.data);
+    const total = envelope.params.length;
 
     // Peel layers from outermost (last param) to innermost (first param)
     for (let i = envelope.params.length - 1; i >= 0; i--) {
@@ -140,6 +144,7 @@ const CryptMail = (() => {
       current = new Uint8Array(
         await crypto.subtle.decrypt({ name: ALGO, iv }, key, current)
       );
+      if (onProgress) onProgress(Math.round(((total - i) / total) * 100));
     }
 
     return bytesToText(current);
