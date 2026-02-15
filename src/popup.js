@@ -13,6 +13,12 @@
   const welcomeBanner = document.getElementById("welcome-banner");
   const dismissWelcome = document.getElementById("dismissWelcome");
 
+  const masterLock = document.getElementById("master-lock");
+  const mainContent = document.getElementById("main-content");
+  const masterPasswordInput = document.getElementById("masterPassword");
+  const unlockBtn = document.getElementById("unlockBtn");
+  const masterStatus = document.getElementById("masterStatus");
+
   // Show welcome banner on first open
   if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
     chrome.storage.local.get("cryptmail_popup_welcomed", (result) => {
@@ -100,5 +106,47 @@
     renderKeys();
   });
 
-  renderKeys();
+  /* ---- Master password unlock flow ---- */
+
+  async function showMasterLock() {
+    const hasMP = await KeyStore.hasMasterPassword();
+    masterStatus.textContent = hasMP
+      ? ""
+      : "First time? Choose a master password to protect your keys.";
+    masterStatus.className = "";
+    masterLock.style.display = "block";
+    mainContent.style.display = "none";
+  }
+
+  async function handleUnlock() {
+    const pw = masterPasswordInput.value;
+    if (!pw) {
+      masterStatus.textContent = "Please enter a master password.";
+      masterStatus.className = "error";
+      return;
+    }
+    const ok = await KeyStore.unlock(pw);
+    if (ok) {
+      masterLock.style.display = "none";
+      mainContent.style.display = "block";
+      renderKeys();
+    } else {
+      masterStatus.textContent = "Wrong master password.";
+      masterStatus.className = "error";
+    }
+  }
+
+  unlockBtn.addEventListener("click", handleUnlock);
+  masterPasswordInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleUnlock();
+  });
+
+  // On load: if the store is already unlocked (same page session), skip the lock screen
+  if (KeyStore.isUnlocked()) {
+    masterLock.style.display = "none";
+    mainContent.style.display = "block";
+    renderKeys();
+  } else {
+    showMasterLock();
+  }
 })();

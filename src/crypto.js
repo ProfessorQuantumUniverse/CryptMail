@@ -18,8 +18,9 @@ const CryptMail = (() => {
 
   const ALGO = "AES-GCM";
   const KEY_LENGTH = 256;
-  const PBKDF2_ITERATIONS = 600000;
-  const DEFAULT_ROUNDS = 100;
+  const PBKDF2_ITERATIONS = 1000000;
+  const DEFAULT_ROUNDS = 1;
+  const SALT_BYTES = 32;
   const ENVELOPE_PREFIX = "-----BEGIN CRYPTMAIL-----";
   const ENVELOPE_SUFFIX = "-----END CRYPTMAIL-----";
 
@@ -89,7 +90,7 @@ const CryptMail = (() => {
     const params = [];
 
     for (let i = 0; i < rounds; i++) {
-      const salt = randomBytes(16);
+      const salt = randomBytes(SALT_BYTES);
       const iv = randomBytes(12);
       const key = await deriveKey(passphrase, salt);
       current = new Uint8Array(
@@ -161,12 +162,76 @@ const CryptMail = (() => {
     );
   }
 
+  /* ---- Compact subject encryption ---- */
+
+  const SUBJECT_PREFIX = "[CM]";
+
+  /**
+   * Encrypt a short subject line into a compact token.
+   * Format: [CM]<base64(salt‖iv‖ciphertext)>
+   * Uses a single round with the same AES-256-GCM + PBKDF2 key derivation.
+   */
+  async function encryptSubject(plaintext, passphrase) {
+    if (!plaintext || !passphrase) {
+      throw new Error("plaintext and passphrase are required");
+    }
+    const salt = randomBytes(SALT_BYTES);
+    const iv = randomBytes(12);
+    const key = await deriveKey(passphrase, salt);
+    const cipherBuf = new Uint8Array(
+      await crypto.subtle.encrypt({ name: ALGO, iv }, key, textToBytes(plaintext))
+    );
+    // Pack salt(32) + iv(12) + ciphertext into one buffer
+    const packed = new Uint8Array(salt.length + iv.length + cipherBuf.length);
+    packed.set(salt, 0);
+    packed.set(iv, salt.length);
+    packed.set(cipherBuf, salt.length + iv.length);
+    const b64 = btoa(String.fromCharCode(...packed));
+    return SUBJECT_PREFIX + b64;
+  }
+
+  /**
+   * Decrypt a compact subject token back to the original subject.
+   */
+  async function decryptSubject(token, passphrase) {
+    if (!token || !passphrase) {
+      throw new Error("token and passphrase are required");
+    }
+    const b64 = token.startsWith(SUBJECT_PREFIX)
+      ? token.slice(SUBJECT_PREFIX.length)
+      : token;
+    const raw = atob(b64);
+    const packed = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) packed[i] = raw.charCodeAt(i);
+
+    const salt = packed.slice(0, SALT_BYTES);
+    const iv = packed.slice(SALT_BYTES, SALT_BYTES + 12);
+    const ciphertext = packed.slice(SALT_BYTES + 12);
+
+    const key = await deriveKey(passphrase, salt);
+    const plainBuf = new Uint8Array(
+      await crypto.subtle.decrypt({ name: ALGO, iv }, key, ciphertext)
+    );
+    return bytesToText(plainBuf);
+  }
+
+  /**
+   * Check whether a string looks like a CryptMail encrypted subject.
+   */
+  function isSubjectEncrypted(text) {
+    return typeof text === "string" && text.startsWith(SUBJECT_PREFIX);
+  }
+
   return {
     encrypt,
     decrypt,
     isEncrypted,
+    encryptSubject,
+    decryptSubject,
+    isSubjectEncrypted,
     ENVELOPE_PREFIX,
     ENVELOPE_SUFFIX,
+    SUBJECT_PREFIX,
     DEFAULT_ROUNDS,
   };
 })();
