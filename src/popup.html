@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CryptMail</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 340px;
+      font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+      background: #fff;
+      color: #202124;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 18px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #1a73e8;
+    }
+    .form-group {
+      margin-bottom: 10px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 3px;
+      color: #5f6368;
+    }
+    input[type="email"],
+    input[type="password"],
+    input[type="number"] {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    .btn {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 4px;
+    }
+    .btn:hover { background: #1765cc; }
+    .btn-danger {
+      background: #d93025;
+    }
+    .btn-danger:hover { background: #b3261e; }
+    .key-list {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+    .key-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border: 1px solid #e8eaed;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+    .key-item .email { font-weight: 500; }
+    .key-item .remove-btn {
+      background: none;
+      border: none;
+      color: #d93025;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px 6px;
+    }
+    .key-item .remove-btn:hover {
+      background: #fce8e6;
+      border-radius: 4px;
+    }
+    .empty-state {
+      font-size: 12px;
+      color: #80868b;
+      text-align: center;
+      padding: 12px 0;
+    }
+    #status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #188038;
+      min-height: 16px;
+    }
+    #status.error { color: #d93025; }
+    hr {
+      border: none;
+      border-top: 1px solid #e8eaed;
+      margin: 14px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔒 CryptMail</h1>
+  <p class="subtitle">Multi-layer encrypted Gmail messaging</p>
+
+  <hr>
+
+  <p class="section-title">Add Contact Key</p>
+  <div class="form-group">
+    <label for="email">Contact Email</label>
+    <input type="email" id="email" placeholder="alice@example.com">
+  </div>
+  <div class="form-group">
+    <label for="passphrase">Shared Passphrase</label>
+    <input type="password" id="passphrase" placeholder="Agreed secret key">
+  </div>
+  <button class="btn" id="saveBtn">Save Key</button>
+  <div id="status"></div>
+
+  <hr>
+
+  <p class="section-title">Stored Keys</p>
+  <div id="keyList" class="key-list">
+    <div class="empty-state">No keys stored yet.</div>
+  </div>
+
+  <script src="keystore.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
