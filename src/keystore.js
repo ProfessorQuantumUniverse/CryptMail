@@ -22,6 +22,7 @@ const KeyStore = (() => {
   const MASTER_CHECK_KEY = "cryptmail_master_check";
   const MASTER_CHECK_TOKEN = "CRYPTMAIL_OK";
   const PBKDF2_ITERATIONS = 600000;
+  const STORAGE_SALT_BYTES = 16;
 
   /** The master password lives only in memory. */
   let _masterPassword = null;
@@ -62,7 +63,7 @@ const KeyStore = (() => {
 
   /** Encrypt `plaintext` with `password`. Returns base64 string of salt‖iv‖ciphertext. */
   async function encryptValue(plaintext, password) {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const salt = crypto.getRandomValues(new Uint8Array(STORAGE_SALT_BYTES));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await deriveStorageKey(password, salt);
     const ct = new Uint8Array(
@@ -80,9 +81,9 @@ const KeyStore = (() => {
     const raw = atob(token);
     const packed = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) packed[i] = raw.charCodeAt(i);
-    const salt = packed.slice(0, 16);
-    const iv = packed.slice(16, 28);
-    const ct = packed.slice(28);
+    const salt = packed.slice(0, STORAGE_SALT_BYTES);
+    const iv = packed.slice(STORAGE_SALT_BYTES, STORAGE_SALT_BYTES + 12);
+    const ct = packed.slice(STORAGE_SALT_BYTES + 12);
     const key = await deriveStorageKey(password, salt);
     const plain = new Uint8Array(
       await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct)

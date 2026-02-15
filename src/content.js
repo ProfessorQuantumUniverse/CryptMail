@@ -108,13 +108,14 @@
    */
   function showPassphrasePrompt(email) {
     return new Promise((resolve) => {
+      const safeEmail = email.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       const overlay = document.createElement("div");
       overlay.className = "cryptmail-welcome-overlay";
       overlay.innerHTML = `
         <div class="cryptmail-welcome-card">
           <div class="cryptmail-welcome-header">🔑 Passphrase Required</div>
           <div class="cryptmail-welcome-body">
-            <p>No shared passphrase found for <strong>${email}</strong>.</p>
+            <p>No shared passphrase found for <strong>${safeEmail}</strong>.</p>
             <p>Enter the passphrase you agreed on with this contact. It will be saved for future messages.</p>
             <input type="password" id="cryptmail-prompt-pw"
               placeholder="Shared passphrase"
@@ -376,8 +377,8 @@
               el.closest('.gs')?.querySelector('h2');
             if (subjectEl) {
               const subjectText = subjectEl.textContent.trim();
-              const cmIdx = subjectText.indexOf(CryptMail.SUBJECT_PREFIX);
-              if (cmIdx !== -1) {
+              if (subjectText.includes(CryptMail.SUBJECT_PREFIX)) {
+                const cmIdx = subjectText.indexOf(CryptMail.SUBJECT_PREFIX);
                 const token = subjectText.substring(cmIdx);
                 const plainSubject = await CryptMail.decryptSubject(token, passphrase);
                 subjectEl.textContent = "🔓 " + plainSubject;
