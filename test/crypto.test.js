@@ -352,6 +352,99 @@ async function run() {
 
   // --- summary ---
   console.log(`\n${passed} passed, ${failed} failed`);
+
+  // --- v3.0 envelope with senderPublicKey auto key exchange ---
+  console.log("\nv3.0 auto key exchange (senderPublicKey in envelope):");
+
+  // Generate a keypair and embed public key in envelope
+  const senderKp = await CryptMail.generateKeyPair();
+  const armoredWithKey = await CryptMail.encrypt("Key exchange test", "secret", {
+    senderPublicKey: senderKp.publicKey,
+  });
+
+  // Verify the public key is embedded in the envelope
+  const keyExInfo = CryptMail.getEnvelopeInfo(armoredWithKey);
+  assert(keyExInfo !== null, "key-exchange envelope parses");
+  assert(keyExInfo.senderPublicKey === senderKp.publicKey, "senderPublicKey preserved in envelope");
+  assert(keyExInfo.mode === "passphrase", "mode is still passphrase for symmetric encrypt");
+
+  // Still decrypts normally
+  const decKeyEx = await CryptMail.decrypt(armoredWithKey, "secret");
+  assert(decKeyEx === "Key exchange test", "key-exchange envelope decrypts correctly");
+
+  // --- v3.0 envelope with encryptedSubject + senderPublicKey ---
+  console.log("\nv3.0 full envelope (subject + key):");
+  const fullSubject = await CryptMail.encryptSubject("Secret meeting", "pass");
+  const fullEnvelope = await CryptMail.encrypt("Full v3 test", "pass", {
+    senderPublicKey: senderKp.publicKey,
+    encryptedSubject: fullSubject,
+  });
+  const fullInfo = CryptMail.getEnvelopeInfo(fullEnvelope);
+  assert(fullInfo.senderPublicKey === senderKp.publicKey, "full envelope has senderPublicKey");
+  assert(fullInfo.hasEncryptedSubject === true, "full envelope has encrypted subject");
+  assert(fullInfo.encryptedSubject === fullSubject, "full envelope subject token matches");
+  const fullDec = await CryptMail.decrypt(fullEnvelope, "pass");
+  assert(fullDec === "Full v3 test", "full v3 envelope decrypts correctly");
+  const fullSubDec = await CryptMail.decryptSubject(fullInfo.encryptedSubject, "pass");
+  assert(fullSubDec === "Secret meeting", "embedded subject decrypts from envelope info");
+
+  // --- ECDH key pair generation (v3 identity) ---
+  console.log("\nv3.0 ECDH identity key pairs:");
+  const kp1 = await CryptMail.generateKeyPair();
+  const kp2 = await CryptMail.generateKeyPair();
+  assert(kp1.publicKey !== kp2.publicKey, "two key pairs have different public keys");
+  assert(kp1.publicKey.length > 20, "public key has reasonable length");
+  const jwk1 = JSON.parse(kp1.privateKey);
+  assert(jwk1.kty === "EC" && jwk1.crv === "P-256", "key pair is P-256 ECDH");
+
+  // --- fingerprint generation helper ---
+  console.log("\nfingerprint generation:");
+  // Simulate the fingerprint function from popup.js
+  function generateFingerprint(publicKeyB64) {
+    try {
+      const raw = atob(publicKeyB64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const hex = Array.from(bytes.slice(0, 16))
+        .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+        .join("");
+      return hex.match(/.{4}/g).join(" : ");
+    } catch {
+      return publicKeyB64.substring(0, 32) + "\u2026";
+    }
+  }
+  const fp = generateFingerprint(kp1.publicKey);
+  assert(fp.includes(" : "), "fingerprint contains colon separators");
+  assert(fp.length > 10, "fingerprint has reasonable length");
+  const fp2 = generateFingerprint(kp1.publicKey);
+  assert(fp === fp2, "same key produces same fingerprint");
+  const fp3 = generateFingerprint(kp2.publicKey);
+  assert(fp !== fp3, "different keys produce different fingerprints");
+
+  // --- password strength calculator ---
+  console.log("\npassword strength:");
+  function calculateStrength(pw) {
+    if (!pw) return { score: 0, cls: "" };
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (pw.length >= 12) score++;
+    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+    if (/\d/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    if (pw.length >= 16) score++;
+    if (score <= 1) return { score, cls: "weak" };
+    if (score <= 2) return { score, cls: "fair" };
+    if (score <= 3) return { score, cls: "good" };
+    return { score, cls: "strong" };
+  }
+  assert(calculateStrength("").score === 0, "empty password scores 0");
+  assert(calculateStrength("abc").cls === "weak", "short password is weak");
+  assert(calculateStrength("abcdefgh").cls === "weak", "8 lowercase is weak");
+  assert(calculateStrength("Abcdefgh1").cls === "good", "mixed 9 chars is good");
+  assert(calculateStrength("Abcdefgh123!longpass").cls === "strong", "complex long password is strong");
+
+  // Final summary
+  console.log(`\nFinal: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }
 

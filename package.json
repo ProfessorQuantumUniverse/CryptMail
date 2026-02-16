@@ -1,8 +1,8 @@
 {
   "name": "cryptmail",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "AES-256-GCM end-to-end encryption Chrome extension for Gmail with ECDH, stealth mode, and file encryption",
+  "description": "AES-256-GCM end-to-end encryption Chrome extension for Gmail with biometric unlock, automatic key exchange, ECDH, stealth mode, and file encryption",
   "scripts": {
     "test": "node test/crypto.test.js"
   },

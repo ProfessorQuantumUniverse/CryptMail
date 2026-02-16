@@ -21,6 +21,10 @@
   const PBKDF2_ITERATIONS = 800000;
   const STORAGE_SALT_BYTES = 16;
   const SESSION_PW_KEY = "cryptmail_master_pw";
+  const WEBAUTHN_KEY = "cryptmail_webauthn";
+  const VERIFICATION_KEY = "cryptmail_verified_contacts";
+  const CONTACT_MODE_KEY = "cryptmail_contact_modes";
+  const ONBOARDING_KEY = "cryptmail_onboarding_done";
 
   let _masterPassword = null;
 
@@ -175,6 +179,13 @@
   async function listContactPublicKeys() {
     const result = await chrome.storage.local.get(PUBLIC_KEYS_KEY);
     return result[PUBLIC_KEYS_KEY] || {};
+  }
+
+  async function removeContactPublicKey(email) {
+    const result = await chrome.storage.local.get(PUBLIC_KEYS_KEY);
+    const keys = result[PUBLIC_KEYS_KEY] || {};
+    delete keys[email.toLowerCase()];
+    await chrome.storage.local.set({ [PUBLIC_KEYS_KEY]: keys });
   }
 
   /* ---- Storage I/O ---- */
@@ -439,6 +450,104 @@
     return bytesToText(plainBuf);
   }
 
+  /* ---- WebAuthn Biometric Storage ---- */
+
+  /**
+   * Store WebAuthn credential data.
+   * The actual WebAuthn API calls happen in the popup (needs user gesture).
+   * We only store/retrieve the credential metadata + encrypted master password.
+   */
+  async function storeWebAuthnData(data) {
+    await chrome.storage.local.set({ [WEBAUTHN_KEY]: data });
+  }
+
+  async function getWebAuthnData() {
+    const result = await chrome.storage.local.get(WEBAUTHN_KEY);
+    return result[WEBAUTHN_KEY] || null;
+  }
+
+  async function removeWebAuthnData() {
+    await chrome.storage.local.remove(WEBAUTHN_KEY);
+  }
+
+  /* ---- Contact Verification (TOFU) ---- */
+
+  async function setContactVerified(email, fingerprint) {
+    const result = await chrome.storage.local.get(VERIFICATION_KEY);
+    const verifications = result[VERIFICATION_KEY] || {};
+    verifications[email.toLowerCase()] = {
+      verified: true,
+      fingerprint,
+      verifiedAt: Date.now(),
+    };
+    await chrome.storage.local.set({ [VERIFICATION_KEY]: verifications });
+  }
+
+  async function getContactVerification(email) {
+    const result = await chrome.storage.local.get(VERIFICATION_KEY);
+    const verifications = result[VERIFICATION_KEY] || {};
+    return verifications[email.toLowerCase()] || null;
+  }
+
+  async function removeContactVerification(email) {
+    const result = await chrome.storage.local.get(VERIFICATION_KEY);
+    const verifications = result[VERIFICATION_KEY] || {};
+    delete verifications[email.toLowerCase()];
+    await chrome.storage.local.set({ [VERIFICATION_KEY]: verifications });
+  }
+
+  /* ---- Contact Encryption Mode ---- */
+
+  async function setContactMode(email, mode) {
+    const result = await chrome.storage.local.get(CONTACT_MODE_KEY);
+    const modes = result[CONTACT_MODE_KEY] || {};
+    modes[email.toLowerCase()] = mode;
+    await chrome.storage.local.set({ [CONTACT_MODE_KEY]: modes });
+  }
+
+  async function getContactMode(email) {
+    const result = await chrome.storage.local.get(CONTACT_MODE_KEY);
+    const modes = result[CONTACT_MODE_KEY] || {};
+    return modes[email.toLowerCase()] || "psk";
+  }
+
+  /* ---- Combined Contact Status (for smart indicators) ---- */
+
+  async function getContactStatus(email) {
+    const lowerEmail = email.toLowerCase();
+    const publicKey = await getContactPublicKey(lowerEmail);
+    const verification = await getContactVerification(lowerEmail);
+    const passphrase = _masterPassword ? await getKey(lowerEmail) : null;
+    const mode = await getContactMode(lowerEmail);
+
+    let level = "none";
+    if (passphrase) level = "secure";
+    if (publicKey && !verification) level = "unverified";
+    if (publicKey && verification && verification.verified) level = "verified";
+    if (passphrase && publicKey && verification && verification.verified)
+      level = "verified";
+
+    return {
+      level,
+      hasPassphrase: !!passphrase,
+      hasPublicKey: !!publicKey,
+      isVerified: !!(verification && verification.verified),
+      mode,
+      fingerprint: verification ? verification.fingerprint : null,
+    };
+  }
+
+  /* ---- Onboarding State ---- */
+
+  async function isOnboardingDone() {
+    const result = await chrome.storage.local.get(ONBOARDING_KEY);
+    return !!result[ONBOARDING_KEY];
+  }
+
+  async function setOnboardingDone() {
+    await chrome.storage.local.set({ [ONBOARDING_KEY]: true });
+  }
+
   /* ---- Badge / Status Indicator ---- */
 
   function updateBadge() {
@@ -515,6 +624,45 @@
 
       case "LIST_CONTACT_PUBLIC_KEYS":
         return { keys: await listContactPublicKeys() };
+
+      case "REMOVE_CONTACT_PUBLIC_KEY":
+        await removeContactPublicKey(msg.email);
+        return { success: true };
+
+      case "STORE_WEBAUTHN":
+        await storeWebAuthnData(msg.data);
+        return { success: true };
+
+      case "GET_WEBAUTHN":
+        return { data: await getWebAuthnData() };
+
+      case "REMOVE_WEBAUTHN":
+        await removeWebAuthnData();
+        return { success: true };
+
+      case "SET_CONTACT_VERIFIED":
+        await setContactVerified(msg.email, msg.fingerprint);
+        return { success: true };
+
+      case "GET_CONTACT_VERIFICATION":
+        return { verification: await getContactVerification(msg.email) };
+
+      case "SET_CONTACT_MODE":
+        await setContactMode(msg.email, msg.mode);
+        return { success: true };
+
+      case "GET_CONTACT_MODE":
+        return { mode: await getContactMode(msg.email) };
+
+      case "GET_CONTACT_STATUS":
+        return { status: await getContactStatus(msg.email) };
+
+      case "IS_ONBOARDING_DONE":
+        return { done: await isOnboardingDone() };
+
+      case "SET_ONBOARDING_DONE":
+        await setOnboardingDone();
+        return { success: true };
 
       case "HYBRID_ENCRYPT":
         return {

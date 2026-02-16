@@ -37,6 +37,7 @@
           autoDecrypt: false,
           showStatusIndicator: true,
           encryptSubjectByDefault: false,
+          autoKeyExchange: true,
         };
       }
     }
@@ -51,6 +52,84 @@
       /* ignore */
     }
   }, 30000);
+
+  /* ---- Key Fingerprint Helper ---- */
+
+  function generateFingerprint(publicKeyB64) {
+    try {
+      const raw = atob(publicKeyB64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const hex = Array.from(bytes.slice(0, 16))
+        .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+        .join("");
+      return hex.match(/.{4}/g).join(" : ");
+    } catch {
+      return publicKeyB64.substring(0, 32) + "…";
+    }
+  }
+
+  /* ---- Smart Recipient Indicators ---- */
+
+  /**
+   * Scan compose windows for recipient email addresses and show
+   * lock indicators: 🟢 secured, 🟡 unverified key, ⚪ no key.
+   */
+  async function scanRecipientIndicators() {
+    const composeWindows = document.querySelectorAll(
+      '.M9, .dw .nH, .inboxsdk__compose, [role="dialog"], .AD'
+    );
+
+    for (const composeEl of composeWindows) {
+      // Find all recipient chips
+      const chips = composeEl.querySelectorAll('[email]');
+      for (const chip of chips) {
+        if (chip.getAttribute('data-cm-indicator')) continue;
+        chip.setAttribute('data-cm-indicator', 'true');
+
+        const email = chip.getAttribute('email');
+        if (!email || !email.includes('@')) continue;
+
+        const indicator = document.createElement('span');
+        indicator.className = 'cryptmail-recipient-indicator';
+
+        try {
+          const unlocked = await KeyStore.isUnlocked();
+          if (!unlocked) {
+            indicator.textContent = '⚪';
+            indicator.title = 'CryptMail: Locked — unlock to see status';
+            indicator.className += ' cm-status-none';
+          } else {
+            const status = await KeyStore.getContactStatus(email);
+            if (status.level === 'verified') {
+              indicator.textContent = '🟢';
+              indicator.title = 'CryptMail: Secured & verified ✓';
+              indicator.className += ' cm-status-verified';
+            } else if (status.level === 'secure') {
+              indicator.textContent = '🟢';
+              indicator.title = 'CryptMail: Secured (passphrase)';
+              indicator.className += ' cm-status-secure';
+            } else if (status.level === 'unverified') {
+              indicator.textContent = '🟡';
+              indicator.title = 'CryptMail: Key available, not verified';
+              indicator.className += ' cm-status-unverified';
+            } else {
+              indicator.textContent = '⚪';
+              indicator.title = 'CryptMail: No encryption key';
+              indicator.className += ' cm-status-none';
+            }
+          }
+        } catch {
+          indicator.textContent = '⚪';
+          indicator.title = 'CryptMail';
+          indicator.className += ' cm-status-none';
+        }
+
+        chip.style.position = 'relative';
+        chip.appendChild(indicator);
+      }
+    }
+  }
 
   /* ---- Shadow DOM Host for modals ---- */
 
@@ -155,30 +234,30 @@
     if (_shadowRoot && _shadowRoot.querySelector("#cm-welcome")) return;
 
     const overlay = createOverlay(`
-      <div class="cm-header">Hi, Welcome to CryptMail!</div>
+      <div class="cm-header">🔒 Welcome to CryptMail v3.0!</div>
       <div class="cm-body">
-        <p><strong>CryptMail</strong> adds AES-256 end-to-end encryption to your Gmail messages.</p>
+        <p><strong>CryptMail</strong> adds AES-256 end-to-end encryption to Gmail with automatic key exchange.</p>
         <div class="cm-steps">
           <div class="cm-step">
             <span class="cm-step-num">1</span>
-            <span>Click the <strong>CryptMail icon</strong> in your toolbar to add a shared passphrase for a contact.</span>
+            <span>Click the <strong>CryptMail icon</strong> in your toolbar to set up your identity.</span>
           </div>
           <div class="cm-step">
             <span class="cm-step-num">2</span>
-            <span>Compose an email and click <strong>"🔒 Encrypt"</strong> to encrypt before sending.</span>
+            <span>Watch for <strong>🟢 🟡 ⚪</strong> indicators next to recipients — they show encryption status.</span>
           </div>
           <div class="cm-step">
             <span class="cm-step-num">3</span>
-            <span>When you receive an encrypted message, click <strong>"🔓 Decrypt"</strong> to read it.</span>
+            <span>Click <strong>"🔒 Encrypt"</strong> to send a secure message. Keys are exchanged automatically!</span>
           </div>
         </div>
         <div class="cm-note">
-          💡 <strong>Tip:</strong> You can also encrypt the subject line. Share the passphrase
-          with your contact securely (in person, via Signal, etc.).
+          💡 <strong>New in v3.0:</strong> Biometric unlock, automatic key exchange,
+          and smart encryption indicators. No more sharing passwords manually!
         </div>
       </div>
       <div class="cm-btn-row">
-        <button class="cm-btn cm-btn-primary" id="cm-welcome-close">Got it – Let's go!</button>
+        <button class="cm-btn cm-btn-primary" id="cm-welcome-close">Got it — Let's go!</button>
       </div>
     `);
     overlay.id = "cm-welcome";
@@ -575,13 +654,16 @@
       const encryptOptions = { onProgress: updateProgress };
 
       // Include our public key for automatic key exchange
-      try {
-        const keyPair = await KeyStore.getKeyPair();
-        if (keyPair && keyPair.publicKey) {
-          encryptOptions.senderPublicKey = keyPair.publicKey;
+      const settings = await getSettings();
+      if (settings.autoKeyExchange !== false) {
+        try {
+          const keyPair = await KeyStore.getKeyPair();
+          if (keyPair && keyPair.publicKey) {
+            encryptOptions.senderPublicKey = keyPair.publicKey;
+          }
+        } catch {
+          /* skip public key inclusion */
         }
-      } catch {
-        /* skip public key inclusion */
       }
 
       // Stealth mode: embed subject in envelope body
@@ -639,6 +721,9 @@
       showNotification(
         "\u2705 Encrypted! Click Gmail's Send button to deliver."
       );
+
+      // Update recipient indicators after encryption
+      setTimeout(scanRecipientIndicators, 500);
     } catch (err) {
       hideProgressBar();
       console.error("CryptMail encryption error:", err);
@@ -751,11 +836,18 @@
       const end = suffixIdx + CryptMail.ENVELOPE_SUFFIX.length;
       const armored = text.substring(start, end);
 
-      // Auto-store sender's public key if present
+      // Auto-store sender's public key if present (auto key exchange)
       try {
         const info = CryptMail.getEnvelopeInfo(armored);
         if (info && info.senderPublicKey) {
-          KeyStore.storeContactPublicKey(senderEmail, info.senderPublicKey);
+          await KeyStore.storeContactPublicKey(senderEmail, info.senderPublicKey);
+          // Show subtle notification about auto-discovered key
+          const existingKey = await KeyStore.getContactPublicKey(senderEmail);
+          if (!existingKey || existingKey !== info.senderPublicKey) {
+            showNotification(
+              "\u{1F511} Auto-discovered encryption key for " + senderEmail
+            );
+          }
         }
       } catch {
         /* ignore */
@@ -814,6 +906,13 @@
           el.setAttribute(DECRYPT_ATTR, "true");
           el.innerHTML = "";
 
+          const secureBanner = document.createElement("div");
+          secureBanner.className = "cryptmail-secure-banner";
+          secureBanner.innerHTML =
+            '<span class="cryptmail-secure-icon">🔒</span>' +
+            '<span>End-to-end encrypted' +
+            (isECDH ? ' (Public Key)' : ' (Passphrase)') + '</span>';
+
           const clearDiv = document.createElement("div");
           clearDiv.className = "cryptmail-decrypted";
           clearDiv.textContent = decrypted;
@@ -830,6 +929,7 @@
               : "Show encrypted";
           });
 
+          el.appendChild(secureBanner);
           el.appendChild(toggleBtn);
           el.appendChild(clearDiv);
         } catch (err) {
@@ -1016,6 +1116,7 @@
       _scanTimeout = null;
       scanCompose();
       scanAndShowDecryptButton();
+      scanRecipientIndicators();
     }, SCAN_DEBOUNCE_MS);
   });
 
@@ -1031,6 +1132,7 @@
   // Initial scan
   scanCompose();
   scanAndShowDecryptButton();
+  scanRecipientIndicators();
 
   // First-run & status
   checkFirstRun();

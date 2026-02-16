@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CryptMail",
-  "version": "2.0.0",
-  "description": "AES-256-GCM end-to-end encryption for Gmail with ECDH key exchange, stealth mode, and file encryption.",
+  "version": "3.0.0",
+  "description": "AES-256-GCM end-to-end encryption for Gmail with biometric unlock, automatic key exchange, ECDH, stealth mode, and file encryption.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://mail.google.com/*"],
   "background": {

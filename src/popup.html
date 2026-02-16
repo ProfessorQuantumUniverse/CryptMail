@@ -7,11 +7,34 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 380px;
+      width: 400px;
       font-family: 'Segoe UI', Roboto, Arial, sans-serif;
       background: #fff;
       color: #202124;
       font-size: 13px;
+      overflow-x: hidden;
+    }
+
+    /* ---- Animations ---- */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(24px); }
+      to   { opacity: 1; transform: translateX(0); }
     }
 
     /* ---- Header ---- */
@@ -21,15 +44,229 @@
       justify-content: space-between;
       padding: 14px 16px 10px;
       border-bottom: 1px solid #e8eaed;
+      background: linear-gradient(135deg, #f8f9ff 0%, #fff 100%);
     }
     .header-left { display: flex; align-items: center; gap: 8px; }
+    .header-right { display: flex; align-items: center; gap: 6px; }
     .header h1 { font-size: 17px; font-weight: 600; }
-    .header .subtitle { font-size: 11px; color: #5f6368; }
+    .version-badge {
+      font-size: 9px;
+      background: linear-gradient(135deg, #1a73e8, #4285f4);
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
     .lock-badge {
       font-size: 18px; cursor: pointer; padding: 4px;
       border-radius: 50%; transition: background 0.15s;
     }
     .lock-badge:hover { background: #f1f3f4; }
+    .biometric-badge {
+      font-size: 15px; padding: 3px 5px;
+      border-radius: 50%; background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      cursor: default;
+    }
+
+    /* ---- Wizard / Onboarding ---- */
+    #onboarding {
+      padding: 0;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .wizard-header {
+      text-align: center;
+      padding: 20px 16px 12px;
+      background: linear-gradient(135deg, #e8f0fe 0%, #f0e6ff 100%);
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .wizard-header h1 { font-size: 20px; font-weight: 700; color: #1a73e8; }
+    .wizard-header .subtitle {
+      font-size: 12px; color: #5f6368; margin-top: 4px;
+    }
+    .wizard-progress {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 24px;
+      gap: 0;
+    }
+    .wizard-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: #e8eaed;
+      color: #80868b;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600;
+      transition: all 0.3s;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .wizard-dot.active {
+      background: #1a73e8; color: #fff;
+      box-shadow: 0 2px 8px rgba(26,115,232,0.35);
+    }
+    .wizard-dot.done {
+      background: #34a853; color: #fff;
+    }
+    .wizard-line {
+      flex: 1; height: 2px; background: #e8eaed;
+      margin: 0 4px; transition: background 0.3s;
+    }
+    .wizard-line.done { background: #34a853; }
+
+    .wizard-page {
+      display: none;
+      padding: 20px 24px 24px;
+      flex: 1;
+      animation: fadeInUp 0.35s ease;
+    }
+    .wizard-page.active { display: flex; flex-direction: column; }
+    .wizard-icon {
+      font-size: 42px; text-align: center; margin-bottom: 10px;
+    }
+    .wizard-page h2 {
+      font-size: 18px; font-weight: 700; text-align: center;
+      margin-bottom: 8px; color: #202124;
+    }
+    .wizard-page > p {
+      font-size: 13px; color: #5f6368; text-align: center;
+      line-height: 1.5; margin-bottom: 16px;
+    }
+
+    /* Strength meter */
+    .strength-meter {
+      height: 6px;
+      background: #e8eaed;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .strength-bar {
+      height: 100%;
+      width: 0%;
+      border-radius: 3px;
+      transition: width 0.3s, background 0.3s;
+    }
+    .strength-bar.weak { background: #d93025; width: 25%; }
+    .strength-bar.fair { background: #f9ab00; width: 50%; }
+    .strength-bar.good { background: #4285f4; width: 75%; }
+    .strength-bar.strong { background: #34a853; width: 100%; }
+    .strength-label {
+      font-size: 11px; margin-top: 4px; color: #5f6368;
+      text-align: right; min-height: 16px;
+    }
+
+    /* Biometric button */
+    .btn-biometric {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; width: 100%;
+      padding: 14px; border-radius: 12px;
+      background: linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%);
+      border: 2px solid #c6dafc;
+      color: #1a56b0; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-biometric:hover {
+      background: linear-gradient(135deg, #e8f0fe 0%, #d2e3fc 100%);
+      border-color: #1a73e8;
+    }
+    .btn-biometric .biometric-icon { font-size: 24px; }
+    .btn-biometric.success {
+      background: #e8f5e9; border-color: #34a853; color: #1b5e20;
+    }
+    .biometric-status {
+      font-size: 12px; text-align: center; margin-top: 8px;
+      min-height: 18px; color: #5f6368;
+    }
+
+    /* Identity card */
+    .identity-card {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e8f0fe 100%);
+      border: 1px solid #c6dafc;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      margin: 12px 0;
+      animation: fadeInUp 0.4s ease;
+    }
+    .fingerprint {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      color: #1a73e8;
+      word-break: break-all;
+      line-height: 1.6;
+      letter-spacing: 1px;
+    }
+    .identity-label {
+      font-size: 11px; color: #5f6368; margin-top: 6px; font-weight: 500;
+    }
+
+    /* Wizard buttons */
+    .wizard-error {
+      font-size: 12px; color: #d93025; min-height: 18px; margin-top: 4px;
+    }
+    .btn-link {
+      background: none; border: none; color: #5f6368;
+      font-size: 12px; cursor: pointer; padding: 8px;
+      text-decoration: underline; display: block;
+      text-align: center; width: 100%; margin-top: 4px;
+    }
+    .btn-link:hover { color: #1a73e8; }
+
+    /* Tutorial steps */
+    .tutorial-steps { margin: 12px 0; }
+    .tutorial-step {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid #f1f3f4;
+      animation: slideIn 0.3s ease;
+    }
+    .tutorial-step:last-child { border-bottom: none; }
+    .tutorial-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #1a73e8; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600; flex-shrink: 0;
+    }
+    .tutorial-step span:last-child { font-size: 13px; color: #3c4043; }
+    .tutorial-note {
+      background: #fef7e0; padding: 10px 12px; border-radius: 8px;
+      font-size: 12px; color: #5f6368; margin-top: 12px; line-height: 1.5;
+    }
+
+    /* ---- Master Lock ---- */
+    #master-lock { padding: 16px; }
+    #master-lock .section-title { margin-bottom: 4px; }
+    .biometric-unlock-section {
+      text-align: center; margin-bottom: 16px;
+    }
+    .btn-biometric-large {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; width: 100%;
+      padding: 16px; border-radius: 12px;
+      background: linear-gradient(135deg, #e8f5e9 0%, #f0f7ff 100%);
+      border: 2px solid #a5d6a7;
+      color: #1b5e20; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-biometric-large:hover {
+      background: linear-gradient(135deg, #c8e6c9 0%, #e8f0fe 100%);
+      box-shadow: 0 2px 12px rgba(52,168,83,0.25);
+    }
+    .biometric-pulse {
+      font-size: 26px;
+      animation: pulse 2s infinite;
+    }
+    .divider-or {
+      display: flex; align-items: center; gap: 12px;
+      margin: 14px 0; color: #80868b; font-size: 12px;
+    }
+    .divider-or::before, .divider-or::after {
+      content: ''; flex: 1; height: 1px; background: #e8eaed;
+    }
 
     /* ---- Tabs ---- */
     .tabs {
@@ -115,6 +352,7 @@
     }
     .btn:hover { background: #1765cc; }
     .btn:active { background: #1256a8; }
+    .btn:disabled { background: #94baf7; cursor: default; }
     .btn-secondary {
       background: #fff;
       color: #1a73e8;
@@ -135,16 +373,12 @@
       position: relative;
       margin-bottom: 10px;
     }
-    .search-wrap input {
-      padding-left: 28px;
-    }
+    .search-wrap input { padding-left: 28px; }
     .search-icon {
       position: absolute;
-      left: 8px;
-      top: 50%;
+      left: 8px; top: 50%;
       transform: translateY(-50%);
-      font-size: 13px;
-      color: #80868b;
+      font-size: 13px; color: #80868b;
       pointer-events: none;
     }
     .key-list {
@@ -171,14 +405,27 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .key-item .key-type {
+
+    /* Trust level badges */
+    .trust-badge {
       font-size: 10px;
-      color: #5f6368;
-      background: #e8eaed;
       padding: 1px 6px;
       border-radius: 3px;
       margin: 0 6px;
+      font-weight: 600;
     }
+    .trust-badge.psk { background: #e8eaed; color: #5f6368; }
+    .trust-badge.auto { background: #e8f0fe; color: #1a73e8; }
+    .trust-badge.verified {
+      background: #e8f5e9; color: #1b5e20;
+    }
+    .trust-badge.unverified {
+      background: #fef7e0; color: #e37400;
+    }
+    .trust-indicator {
+      font-size: 12px; margin-right: 4px;
+    }
+
     .key-actions { display: flex; gap: 2px; flex-shrink: 0; }
     .key-actions button {
       background: none;
@@ -211,6 +458,32 @@
       margin: 14px 0;
     }
 
+    /* ---- Mode selector ---- */
+    .mode-selector {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .mode-option {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid #e8eaed;
+      border-radius: 6px;
+      font-size: 11px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: #fff;
+      color: #5f6368;
+    }
+    .mode-option:hover { border-color: #1a73e8; color: #1a73e8; }
+    .mode-option.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: 600;
+    }
+
     /* ---- Settings ---- */
     .setting-row {
       display: flex;
@@ -220,55 +493,35 @@
       border-bottom: 1px solid #f1f3f4;
     }
     .setting-row:last-child { border-bottom: none; }
-    .setting-info {
-      flex: 1;
-    }
+    .setting-info { flex: 1; }
     .setting-label {
-      font-size: 13px;
-      font-weight: 500;
-      color: #202124;
+      font-size: 13px; font-weight: 500; color: #202124;
     }
     .setting-desc {
-      font-size: 11px;
-      color: #5f6368;
-      margin-top: 2px;
+      font-size: 11px; color: #5f6368; margin-top: 2px;
     }
     .toggle {
       position: relative;
-      width: 36px;
-      height: 20px;
-      flex-shrink: 0;
-      margin-left: 12px;
+      width: 36px; height: 20px;
+      flex-shrink: 0; margin-left: 12px;
     }
-    .toggle input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
     .toggle-slider {
-      position: absolute;
-      cursor: pointer;
+      position: absolute; cursor: pointer;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: #dadce0;
-      border-radius: 20px;
+      background: #dadce0; border-radius: 20px;
       transition: 0.2s;
     }
     .toggle-slider:before {
-      content: "";
-      position: absolute;
+      content: ""; position: absolute;
       height: 16px; width: 16px;
       left: 2px; bottom: 2px;
-      background: white;
-      border-radius: 50%;
+      background: white; border-radius: 50%;
       transition: 0.2s;
       box-shadow: 0 1px 2px rgba(0,0,0,0.15);
     }
-    .toggle input:checked + .toggle-slider {
-      background: #1a73e8;
-    }
-    .toggle input:checked + .toggle-slider:before {
-      transform: translateX(16px);
-    }
+    .toggle input:checked + .toggle-slider { background: #1a73e8; }
+    .toggle input:checked + .toggle-slider:before { transform: translateX(16px); }
 
     /* ---- Security tab ---- */
     .pubkey-display {
@@ -304,6 +557,12 @@
       white-space: nowrap;
       font-weight: 500;
     }
+    .pubkey-item .pk-status {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      margin: 0 4px;
+    }
 
     /* ---- File section ---- */
     .file-section {
@@ -312,229 +571,376 @@
       border-top: 1px solid #e8eaed;
     }
     .file-row {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
+      display: flex; gap: 6px; margin-top: 8px;
     }
     .file-row .btn { flex: 1; }
 
-    /* ---- Master lock overlay ---- */
-    #master-lock {
-      padding: 16px;
-    }
-    #master-lock .section-title { margin-bottom: 4px; }
-
-    /* ---- Welcome ---- */
+    /* ---- Welcome banner ---- */
     .welcome-banner {
-      background: #e8f0fe;
+      background: linear-gradient(135deg, #e8f0fe 0%, #f0e6ff 100%);
       border: 1px solid #c6dafc;
-      border-radius: 6px;
-      padding: 10px 28px 10px 12px;
+      border-radius: 8px;
+      padding: 12px 28px 12px 14px;
       margin: 12px 16px;
       font-size: 12px;
       color: #1a56b0;
       position: relative;
       line-height: 1.5;
+      animation: fadeInUp 0.3s ease;
     }
     .welcome-banner p { margin-bottom: 4px; }
     .welcome-hint { color: #5f6368; font-size: 11px; }
     .btn-dismiss {
       position: absolute;
       top: 6px; right: 6px;
-      background: none;
-      border: none;
-      color: #5f6368;
-      cursor: pointer; font-size: 14px; padding: 2px 4px;
+      background: none; border: none;
+      color: #5f6368; cursor: pointer;
+      font-size: 14px; padding: 2px 4px;
     }
     .btn-dismiss:hover { color: #202124; }
 
     /* ---- Edit inline ---- */
     .edit-row {
-      display: flex;
-      gap: 4px;
-      margin-top: 4px;
+      display: flex; gap: 4px; margin-top: 4px;
     }
     .edit-row input {
-      flex: 1;
-      padding: 4px 8px;
+      flex: 1; padding: 4px 8px; font-size: 12px;
+    }
+
+    /* ---- Spinner ---- */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ---- Verify dialog inline ---- */
+    .verify-section {
+      background: #fef7e0;
+      border: 1px solid #fdd835;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 10px;
       font-size: 12px;
+    }
+    .verify-section .fingerprint {
+      font-size: 11px;
+      font-family: 'Consolas', monospace;
+      color: #e65100;
+      margin: 6px 0;
+      letter-spacing: 2px;
+      text-align: center;
     }
   </style>
 </head>
 <body>
 
-  <div class="header">
-    <div class="header-left">
+  <!-- ===== ONBOARDING WIZARD ===== -->
+  <div id="onboarding" style="display:none;">
+    <div class="wizard-header">
       <h1>🔒 CryptMail</h1>
-    </div>
-    <span class="lock-badge" id="lockBadge" title="Lock/Unlock">🔒</span>
-  </div>
-
-  <div id="welcome-banner" class="welcome-banner" style="display:none;">
-    <p><strong>Welcome!</strong> Add a contact key below to start sending encrypted messages.</p>
-    <p class="welcome-hint">Share the passphrase with your contact via a secure channel (in person, Signal, etc.).</p>
-    <button class="btn-dismiss" id="dismissWelcome">✕</button>
-  </div>
-
-  <!-- Master password unlock -->
-  <div id="master-lock" style="display:none;">
-    <p class="section-title">🔑 Unlock Key Store</p>
-    <p style="font-size:12px;color:#5f6368;margin-bottom:8px;">
-      Enter your master password to access stored keys. All passphrases are encrypted at rest.
-    </p>
-    <div class="form-group">
-      <label for="masterPassword">Master Password</label>
-      <input type="password" id="masterPassword" placeholder="Master password">
-    </div>
-    <button class="btn" id="unlockBtn">Unlock</button>
-    <div id="masterStatus" style="margin-top:8px;font-size:12px;min-height:16px;"></div>
-  </div>
-
-  <!-- Main content (shown after unlock) -->
-  <div id="main-content" style="display:none;">
-
-    <div class="tabs">
-      <div class="tab active" data-tab="keys">🔑 Keys</div>
-      <div class="tab" data-tab="settings">⚙️ Settings</div>
-      <div class="tab" data-tab="security">🛡️ Security</div>
+      <div class="subtitle">End-to-end encrypted email for everyone</div>
     </div>
 
-    <!-- =============== KEYS TAB =============== -->
-    <div class="tab-content active" id="tab-keys">
-      <p class="section-title">Add Contact Key</p>
+    <div class="wizard-progress">
+      <div class="wizard-dot active" data-step="1">1</div>
+      <div class="wizard-line" id="wiz-line-1"></div>
+      <div class="wizard-dot" data-step="2">2</div>
+      <div class="wizard-line" id="wiz-line-2"></div>
+      <div class="wizard-dot" data-step="3">3</div>
+      <div class="wizard-line" id="wiz-line-3"></div>
+      <div class="wizard-dot" data-step="4">4</div>
+    </div>
+
+    <!-- Step 1: Master Password -->
+    <div class="wizard-page active" id="wizard-step-1">
+      <div class="wizard-icon">🔐</div>
+      <h2>Create Master Password</h2>
+      <p>This password protects all your encryption keys. Make it strong and memorable.</p>
       <div class="form-group">
-        <label for="email">Contact Email</label>
-        <input type="email" id="email" placeholder="alice@example.com">
+        <input type="password" id="wizard-pw" placeholder="Choose a master password" autocomplete="new-password">
+        <div class="strength-meter">
+          <div class="strength-bar" id="strength-bar"></div>
+        </div>
+        <div class="strength-label" id="strength-label"></div>
       </div>
       <div class="form-group">
-        <label for="passphrase">Shared Passphrase</label>
-        <input type="password" id="passphrase" placeholder="Agreed secret key">
+        <input type="password" id="wizard-pw-confirm" placeholder="Confirm password" autocomplete="new-password">
       </div>
-      <button class="btn" id="saveBtn">Save Key</button>
-      <div id="status"></div>
+      <div class="wizard-error" id="wizard-pw-error"></div>
+      <button class="btn" id="wizard-next-1">Continue →</button>
+    </div>
 
-      <hr>
+    <!-- Step 2: Biometric Setup -->
+    <div class="wizard-page" id="wizard-step-2">
+      <div class="wizard-icon">👆</div>
+      <h2>Biometric Unlock</h2>
+      <p>Use Windows Hello or Touch ID to unlock instantly — no password needed.</p>
+      <button class="btn-biometric" id="wizard-biometric">
+        <span class="biometric-icon">🔑</span>
+        <span>Enable Biometric Unlock</span>
+      </button>
+      <div class="biometric-status" id="wizard-biometric-status"></div>
+      <button class="btn-link" id="wizard-skip-2">Skip for now</button>
+      <button class="btn" id="wizard-next-2" style="display:none;">Continue →</button>
+    </div>
 
-      <p class="section-title">Stored Keys</p>
-      <div class="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="search" id="keySearch" placeholder="Search contacts…">
+    <!-- Step 3: Generate Identity -->
+    <div class="wizard-page" id="wizard-step-3">
+      <div class="wizard-icon">🎭</div>
+      <h2>Your Encryption Identity</h2>
+      <p>Generate a unique cryptographic identity for automatic key exchange.</p>
+      <div class="identity-card" id="identity-card" style="display:none;">
+        <div class="fingerprint" id="wizard-fingerprint"></div>
+        <div class="identity-label">Your Key Fingerprint</div>
       </div>
-      <div id="keyList" class="key-list">
-        <div class="empty-state">No keys stored yet.</div>
+      <button class="btn" id="wizard-generate" style="margin-top:auto;">Generate Identity</button>
+      <button class="btn" id="wizard-next-3" style="display:none;margin-top:8px;">Continue →</button>
+    </div>
+
+    <!-- Step 4: Done! -->
+    <div class="wizard-page" id="wizard-step-4">
+      <div class="wizard-icon">🚀</div>
+      <h2>You're All Set!</h2>
+      <div class="tutorial-steps">
+        <div class="tutorial-step">
+          <span class="tutorial-num">1</span>
+          <span>Open <strong>Gmail</strong> and compose a new email</span>
+        </div>
+        <div class="tutorial-step">
+          <span class="tutorial-num">2</span>
+          <span>Click <strong>"🔒 Encrypt"</strong> in the compose toolbar</span>
+        </div>
+        <div class="tutorial-step">
+          <span class="tutorial-num">3</span>
+          <span>Watch for the <strong>lock indicators</strong> — 🟢 🟡 ⚪ — next to recipients</span>
+        </div>
+      </div>
+      <div class="tutorial-note">
+        💡 CryptMail automatically exchanges keys with other CryptMail users. No shared passwords needed!
+      </div>
+      <button class="btn" id="wizard-finish" style="margin-top:16px;">Let's Go!</button>
+    </div>
+  </div>
+
+  <!-- ===== MAIN APP ===== -->
+  <div id="app" style="display:none;">
+
+    <div class="header">
+      <div class="header-left">
+        <h1>🔒 CryptMail</h1>
+        <span class="version-badge">v3.0</span>
+      </div>
+      <div class="header-right">
+        <span class="biometric-badge" id="biometricBadge" title="Biometric Unlock Active" style="display:none;">👆</span>
+        <span class="lock-badge" id="lockBadge" title="Lock/Unlock">🔒</span>
       </div>
     </div>
 
-    <!-- =============== SETTINGS TAB =============== -->
-    <div class="tab-content" id="tab-settings">
-      <p class="section-title">Preferences</p>
-
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label">Stealth Mode</div>
-          <div class="setting-desc">Hide encryption markers; use generic subjects</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="opt-stealth">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label">Auto-Decrypt</div>
-          <div class="setting-desc">Automatically decrypt messages when opened</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="opt-autoDecrypt">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label">Encrypt Subject by Default</div>
-          <div class="setting-desc">Pre-check "Encrypt subject" checkbox</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="opt-encryptSubject">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="setting-row">
-        <div class="setting-info">
-          <div class="setting-label">Status Indicator</div>
-          <div class="setting-desc">Show lock icon in Gmail header</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="opt-statusIndicator">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <hr>
-
-      <p class="section-title">Stealth Subjects</p>
-      <p style="font-size:11px;color:#5f6368;margin-bottom:6px;">
-        Generic subjects used when Stealth Mode is active (one per line).
-      </p>
-      <textarea id="stealthSubjects" rows="4" placeholder="Hi&#10;Re: Follow-up&#10;Quick update"></textarea>
-      <button class="btn btn-secondary" id="saveSettingsBtn" style="margin-top:6px;">Save Settings</button>
-      <div id="settingsStatus"></div>
+    <div id="welcome-banner" class="welcome-banner" style="display:none;">
+      <p><strong>Welcome back!</strong> Your encrypted keys are ready.</p>
+      <p class="welcome-hint">🟢 = secured contact &nbsp; 🟡 = key available, unverified &nbsp; ⚪ = no key</p>
+      <button class="btn-dismiss" id="dismissWelcome">✕</button>
     </div>
 
-    <!-- =============== SECURITY TAB =============== -->
-    <div class="tab-content" id="tab-security">
-      <p class="section-title">ECDH Key Pair</p>
-      <p style="font-size:11px;color:#5f6368;margin-bottom:8px;">
-        Generate an ECDH key pair for public-key encryption. Share your public key with contacts who also use CryptMail.
+    <!-- Master password unlock -->
+    <div id="master-lock" style="display:none;">
+      <p class="section-title">🔑 Unlock Key Store</p>
+      <p style="font-size:12px;color:#5f6368;margin-bottom:10px;">
+        Unlock to access your encrypted keys and settings.
       </p>
-      <div id="keypairInfo">
-        <div class="empty-state">No key pair generated yet.</div>
+      <div id="biometric-unlock" class="biometric-unlock-section" style="display:none;">
+        <button class="btn-biometric-large" id="biometricUnlockBtn">
+          <span class="biometric-pulse">👆</span>
+          <span>Unlock with Biometrics</span>
+        </button>
+        <div class="divider-or"><span>or enter password</span></div>
       </div>
-      <div style="display:flex;gap:6px;margin-top:8px;">
-        <button class="btn btn-secondary" id="generateKeyPairBtn" style="flex:1;">Generate Key Pair</button>
-        <button class="btn btn-secondary" id="copyPubKeyBtn" style="flex:1;" disabled>Copy Public Key</button>
+      <div class="form-group">
+        <label for="masterPassword">Master Password</label>
+        <input type="password" id="masterPassword" placeholder="Master password">
+      </div>
+      <button class="btn" id="unlockBtn">Unlock</button>
+      <div id="masterStatus" style="margin-top:8px;font-size:12px;min-height:16px;"></div>
+    </div>
+
+    <!-- Main content (shown after unlock) -->
+    <div id="main-content" style="display:none;">
+
+      <div class="tabs">
+        <div class="tab active" data-tab="keys">🔑 Keys</div>
+        <div class="tab" data-tab="settings">⚙️ Settings</div>
+        <div class="tab" data-tab="security">🛡️ Security</div>
       </div>
 
-      <hr>
-
-      <p class="section-title">Contact Public Keys</p>
-      <div id="pubkeyList" class="pubkey-list">
-        <div class="empty-state">No contact public keys stored.</div>
-      </div>
-      <div style="margin-top:8px;">
+      <!-- =============== KEYS TAB =============== -->
+      <div class="tab-content active" id="tab-keys">
+        <p class="section-title">Add Contact Key</p>
         <div class="form-group">
-          <label for="addPubKeyEmail">Contact Email</label>
-          <input type="email" id="addPubKeyEmail" placeholder="bob@example.com">
+          <label for="email">Contact Email</label>
+          <input type="email" id="email" placeholder="alice@example.com">
         </div>
         <div class="form-group">
-          <label for="addPubKeyValue">Public Key (base64)</label>
-          <input type="text" id="addPubKeyValue" placeholder="Paste public key here">
+          <label for="passphrase">Shared Passphrase</label>
+          <input type="password" id="passphrase" placeholder="Agreed secret key">
         </div>
-        <button class="btn btn-secondary" id="addPubKeyBtn">Add Public Key</button>
+        <div class="mode-selector" id="newContactMode">
+          <div class="mode-option active" data-mode="psk">🔑 Passphrase (Classic)</div>
+          <div class="mode-option" data-mode="auto">🔄 Auto (Public Key)</div>
+        </div>
+        <button class="btn" id="saveBtn" style="margin-top:8px;">Save Key</button>
+        <div id="status"></div>
+
+        <hr>
+
+        <p class="section-title">Stored Keys</p>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="keySearch" placeholder="Search contacts…">
+        </div>
+        <div id="keyList" class="key-list">
+          <div class="empty-state">No keys stored yet.</div>
+        </div>
       </div>
 
-      <!-- File encryption -->
-      <div class="file-section">
-        <p class="section-title">📎 File Encryption</p>
+      <!-- =============== SETTINGS TAB =============== -->
+      <div class="tab-content" id="tab-settings">
+        <p class="section-title">Security</p>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">👆 Biometric Unlock</div>
+            <div class="setting-desc">Use Windows Hello / Touch ID instead of master password</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="opt-biometric">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">🔄 Auto Key Exchange</div>
+            <div class="setting-desc">Automatically embed public key in outgoing messages</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="opt-autoKeyExchange" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <hr>
+        <p class="section-title">Preferences</p>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Stealth Mode</div>
+            <div class="setting-desc">Hide encryption markers; use generic subjects</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="opt-stealth">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-Decrypt</div>
+            <div class="setting-desc">Instantly decrypt messages when key is available</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="opt-autoDecrypt">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Encrypt Subject by Default</div>
+            <div class="setting-desc">Pre-check "Encrypt subject" checkbox</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="opt-encryptSubject">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Status Indicator</div>
+            <div class="setting-desc">Show lock icon in Gmail header</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="opt-statusIndicator">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <hr>
+        <p class="section-title">Stealth Subjects</p>
         <p style="font-size:11px;color:#5f6368;margin-bottom:6px;">
-          Encrypt or decrypt files using a contact's passphrase.
+          Generic subjects used when Stealth Mode is active (one per line).
         </p>
-        <div class="form-group">
-          <label for="fileContact">Contact Email (for passphrase)</label>
-          <input type="email" id="fileContact" placeholder="alice@example.com">
-        </div>
-        <div class="file-row">
-          <button class="btn" id="encryptFileBtn">🔒 Encrypt File</button>
-          <button class="btn btn-secondary" id="decryptFileBtn">🔓 Decrypt .cmail</button>
-        </div>
+        <textarea id="stealthSubjects" rows="4" placeholder="Hi&#10;Re: Follow-up&#10;Quick update"></textarea>
+        <button class="btn btn-secondary" id="saveSettingsBtn" style="margin-top:6px;">Save Settings</button>
+        <div id="settingsStatus"></div>
       </div>
-      <div id="securityStatus"></div>
-    </div>
 
-  </div><!-- end main-content -->
+      <!-- =============== SECURITY TAB =============== -->
+      <div class="tab-content" id="tab-security">
+        <p class="section-title">Your Identity</p>
+        <p style="font-size:11px;color:#5f6368;margin-bottom:8px;">
+          Your ECDH key pair for automatic, passwordless encryption with other CryptMail users.
+        </p>
+        <div id="keypairInfo">
+          <div class="empty-state">No key pair generated yet.</div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn btn-secondary" id="generateKeyPairBtn" style="flex:1;">Generate Key Pair</button>
+          <button class="btn btn-secondary" id="copyPubKeyBtn" style="flex:1;" disabled>Copy Public Key</button>
+        </div>
+
+        <hr>
+
+        <p class="section-title">Contact Public Keys</p>
+        <div id="pubkeyList" class="pubkey-list">
+          <div class="empty-state">No contact public keys stored.</div>
+        </div>
+        <div style="margin-top:8px;">
+          <div class="form-group">
+            <label for="addPubKeyEmail">Contact Email</label>
+            <input type="email" id="addPubKeyEmail" placeholder="bob@example.com">
+          </div>
+          <div class="form-group">
+            <label for="addPubKeyValue">Public Key (base64)</label>
+            <input type="text" id="addPubKeyValue" placeholder="Paste public key here">
+          </div>
+          <button class="btn btn-secondary" id="addPubKeyBtn">Add Public Key</button>
+        </div>
+
+        <!-- File encryption -->
+        <div class="file-section">
+          <p class="section-title">📎 File Encryption</p>
+          <p style="font-size:11px;color:#5f6368;margin-bottom:6px;">
+            Encrypt or decrypt files using a contact's passphrase.
+          </p>
+          <div class="form-group">
+            <label for="fileContact">Contact Email (for passphrase)</label>
+            <input type="email" id="fileContact" placeholder="alice@example.com">
+          </div>
+          <div class="file-row">
+            <button class="btn" id="encryptFileBtn">🔒 Encrypt File</button>
+            <button class="btn btn-secondary" id="decryptFileBtn">🔓 Decrypt .cmail</button>
+          </div>
+        </div>
+        <div id="securityStatus"></div>
+      </div>
+
+    </div><!-- end main-content -->
+  </div><!-- end app -->
 
   <script src="crypto.js"></script>
   <script src="keystore.js"></script>

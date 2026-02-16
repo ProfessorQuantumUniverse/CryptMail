@@ -133,6 +133,76 @@ const KeyStore = (() => {
     return res.plaintext;
   }
 
+  /** Remove a contact's public key. */
+  async function removeContactPublicKey(email) {
+    await sendMessage({ type: "REMOVE_CONTACT_PUBLIC_KEY", email });
+  }
+
+  /* ---- WebAuthn Biometric ---- */
+
+  /** Store WebAuthn credential data (credential ID + encrypted master password). */
+  async function storeWebAuthnData(data) {
+    await sendMessage({ type: "STORE_WEBAUTHN", data });
+  }
+
+  /** Get stored WebAuthn credential data. */
+  async function getWebAuthnData() {
+    const res = await sendMessage({ type: "GET_WEBAUTHN" });
+    return res.data;
+  }
+
+  /** Remove WebAuthn credentials. */
+  async function removeWebAuthnData() {
+    await sendMessage({ type: "REMOVE_WEBAUTHN" });
+  }
+
+  /* ---- Contact Verification (TOFU) ---- */
+
+  /** Mark a contact's public key as verified with a fingerprint. */
+  async function setContactVerified(email, fingerprint) {
+    await sendMessage({ type: "SET_CONTACT_VERIFIED", email, fingerprint });
+  }
+
+  /** Get contact verification status. */
+  async function getContactVerification(email) {
+    const res = await sendMessage({ type: "GET_CONTACT_VERIFICATION", email });
+    return res.verification;
+  }
+
+  /* ---- Contact Encryption Mode ---- */
+
+  /** Set encryption mode for a contact: 'psk' (passphrase) or 'auto' (PKI). */
+  async function setContactMode(email, mode) {
+    await sendMessage({ type: "SET_CONTACT_MODE", email, mode });
+  }
+
+  /** Get encryption mode for a contact. Default: 'psk'. */
+  async function getContactMode(email) {
+    const res = await sendMessage({ type: "GET_CONTACT_MODE", email });
+    return res.mode;
+  }
+
+  /* ---- Combined Contact Status ---- */
+
+  /** Get full encryption status for a contact (for smart indicators). */
+  async function getContactStatus(email) {
+    const res = await sendMessage({ type: "GET_CONTACT_STATUS", email });
+    return res.status;
+  }
+
+  /* ---- Onboarding ---- */
+
+  /** Check if onboarding has been completed. */
+  async function isOnboardingDone() {
+    const res = await sendMessage({ type: "IS_ONBOARDING_DONE" });
+    return res.done;
+  }
+
+  /** Mark onboarding as completed. */
+  async function setOnboardingDone() {
+    await sendMessage({ type: "SET_ONBOARDING_DONE" });
+  }
+
   return {
     isUnlocked,
     hasMasterPassword,
@@ -149,8 +219,19 @@ const KeyStore = (() => {
     storeContactPublicKey,
     getContactPublicKey,
     listContactPublicKeys,
+    removeContactPublicKey,
     hybridEncrypt,
     hybridDecrypt,
+    storeWebAuthnData,
+    getWebAuthnData,
+    removeWebAuthnData,
+    setContactVerified,
+    getContactVerification,
+    setContactMode,
+    getContactMode,
+    getContactStatus,
+    isOnboardingDone,
+    setOnboardingDone,
   };
 })();
 
