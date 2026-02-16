@@ -654,7 +654,6 @@
       const encryptOptions = { onProgress: updateProgress };
 
       // Include our public key for automatic key exchange
-      const settings = await getSettings();
       if (settings.autoKeyExchange !== false) {
         try {
           const keyPair = await KeyStore.getKeyPair();
@@ -840,10 +839,11 @@
       try {
         const info = CryptMail.getEnvelopeInfo(armored);
         if (info && info.senderPublicKey) {
-          await KeyStore.storeContactPublicKey(senderEmail, info.senderPublicKey);
-          // Show subtle notification about auto-discovered key
+          // Check if this is a new or changed key before storing
           const existingKey = await KeyStore.getContactPublicKey(senderEmail);
-          if (!existingKey || existingKey !== info.senderPublicKey) {
+          const isNewKey = !existingKey || existingKey !== info.senderPublicKey;
+          await KeyStore.storeContactPublicKey(senderEmail, info.senderPublicKey);
+          if (isNewKey) {
             showNotification(
               "\u{1F511} Auto-discovered encryption key for " + senderEmail
             );
