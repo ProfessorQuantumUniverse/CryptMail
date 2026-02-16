@@ -1,236 +1,156 @@
 /**
- * CryptMail – Key Store
+ * CryptMail – KeyStore (Message-Passing Proxy)
  *
- * Persists per-contact passphrases in chrome.storage.local.
- * All passphrases are encrypted at rest using AES-256-GCM with a key derived
- * from the user's master password via PBKDF2.
+ * Thin async wrapper that routes all key/settings operations
+ * to the background service worker via chrome.runtime.sendMessage.
  *
- * Storage schema:
- *   {
- *     "cryptmail_keys": { "alice@example.com": "<base64(salt‖iv‖ciphertext)>", … },
- *     "cryptmail_master_check": "<base64(salt‖iv‖ciphertext)>"   // encrypted known token
- *   }
- *
- * The master password is kept only in memory for the lifetime of the page.
+ * API is fully async – all methods return Promises.
  */
 
 /* exported KeyStore */
 const KeyStore = (() => {
   "use strict";
 
-  const STORAGE_KEY = "cryptmail_keys";
-  const MASTER_CHECK_KEY = "cryptmail_master_check";
-  const MASTER_CHECK_TOKEN = "CRYPTMAIL_OK";
-  const PBKDF2_ITERATIONS = 600000;
-  const STORAGE_SALT_BYTES = 16;
-
-  /** The master password lives only in memory. */
-  let _masterPassword = null;
-
-  function getStorage() {
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      return chrome.storage.local;
-    }
-    return null;
-  }
-
-  /* ---- crypto helpers (AES-GCM for at-rest encryption) ---- */
-
-  function textToBytes(text) {
-    return new TextEncoder().encode(text);
-  }
-
-  function bytesToText(buf) {
-    return new TextDecoder().decode(buf);
-  }
-
-  async function deriveStorageKey(password, salt) {
-    const raw = await crypto.subtle.importKey(
-      "raw",
-      textToBytes(password),
-      "PBKDF2",
-      false,
-      ["deriveKey"]
-    );
-    return crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
-      raw,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["encrypt", "decrypt"]
-    );
-  }
-
-  /** Encrypt `plaintext` with `password`. Returns base64 string of salt‖iv‖ciphertext. */
-  async function encryptValue(plaintext, password) {
-    const salt = crypto.getRandomValues(new Uint8Array(STORAGE_SALT_BYTES));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await deriveStorageKey(password, salt);
-    const ct = new Uint8Array(
-      await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, textToBytes(plaintext))
-    );
-    const packed = new Uint8Array(salt.length + iv.length + ct.length);
-    packed.set(salt, 0);
-    packed.set(iv, salt.length);
-    packed.set(ct, salt.length + iv.length);
-    return btoa(String.fromCharCode(...packed));
-  }
-
-  /** Decrypt a base64 `token` with `password`. Returns plaintext string. */
-  async function decryptValue(token, password) {
-    const raw = atob(token);
-    const packed = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) packed[i] = raw.charCodeAt(i);
-    const salt = packed.slice(0, STORAGE_SALT_BYTES);
-    const iv = packed.slice(STORAGE_SALT_BYTES, STORAGE_SALT_BYTES + 12);
-    const ct = packed.slice(STORAGE_SALT_BYTES + 12);
-    const key = await deriveStorageKey(password, salt);
-    const plain = new Uint8Array(
-      await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct)
-    );
-    return bytesToText(plain);
-  }
-
-  /* ---- storage I/O ---- */
-
-  async function loadAll() {
-    const storage = getStorage();
-    if (!storage) return {};
-    return new Promise((resolve) => {
-      storage.get(STORAGE_KEY, (result) => {
-        resolve(result[STORAGE_KEY] || {});
-      });
-    });
-  }
-
-  async function saveAll(keys) {
-    const storage = getStorage();
-    if (!storage) return;
-    return new Promise((resolve) => {
-      storage.set({ [STORAGE_KEY]: keys }, resolve);
-    });
-  }
-
-  /* ---- master password management ---- */
-
-  /**
-   * Check whether a master password has been set (i.e. the check token exists).
-   */
-  async function hasMasterPassword() {
-    const storage = getStorage();
-    if (!storage) return false;
-    return new Promise((resolve) => {
-      storage.get(MASTER_CHECK_KEY, (result) => {
-        resolve(!!result[MASTER_CHECK_KEY]);
-      });
-    });
-  }
-
-  /**
-   * Initialise a new master password. Stores an encrypted check token.
-   * Must be called once before any keys are saved.
-   */
-  async function initMasterPassword(password) {
-    const token = await encryptValue(MASTER_CHECK_TOKEN, password);
-    const storage = getStorage();
-    if (storage) {
-      await new Promise((resolve) => {
-        storage.set({ [MASTER_CHECK_KEY]: token }, resolve);
-      });
-    }
-    _masterPassword = password;
-  }
-
-  /**
-   * Unlock the store by verifying the master password against the check token.
-   * Returns true on success, false on wrong password.
-   */
-  async function unlock(password) {
-    const storage = getStorage();
-    if (!storage) { _masterPassword = password; return true; }
-    const stored = await new Promise((resolve) => {
-      storage.get(MASTER_CHECK_KEY, (result) => {
-        resolve(result[MASTER_CHECK_KEY] || null);
-      });
-    });
-    if (!stored) {
-      // First time – initialise
-      await initMasterPassword(password);
-      return true;
-    }
-    try {
-      const plain = await decryptValue(stored, password);
-      if (plain === MASTER_CHECK_TOKEN) {
-        _masterPassword = password;
-        return true;
+  async function sendMessage(msg) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage(msg, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (response && response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+          resolve(response);
+        });
+      } catch (err) {
+        reject(err);
       }
-      return false;
-    } catch {
-      return false;
-    }
+    });
   }
 
-  /** Returns true if the master password is currently in memory. */
-  function isUnlocked() {
-    return _masterPassword !== null;
+  /** Check if the KeyStore is currently unlocked. Returns Promise<boolean>. */
+  async function isUnlocked() {
+    const res = await sendMessage({ type: "IS_UNLOCKED" });
+    return res.unlocked;
   }
 
-  /* ---- public key operations ---- */
+  /** Check if a master password has been set. Returns Promise<boolean>. */
+  async function hasMasterPassword() {
+    const res = await sendMessage({ type: "HAS_MASTER_PASSWORD" });
+    return res.exists;
+  }
 
-  /** Get the passphrase stored for `email`. Returns null if none. */
+  /** Unlock the store with the given password. Returns Promise<boolean>. */
+  async function unlock(password) {
+    const res = await sendMessage({ type: "UNLOCK", password });
+    return res.success;
+  }
+
+  /** Lock the store (clears master password from memory). */
+  async function lock() {
+    await sendMessage({ type: "LOCK" });
+  }
+
+  /** Get the passphrase stored for an email. Returns Promise<string|null>. */
   async function getKey(email) {
-    const keys = await loadAll();
-    const encrypted = keys[email.toLowerCase()];
-    if (!encrypted) return null;
-    if (!_masterPassword) return null;
-    try {
-      return await decryptValue(encrypted, _masterPassword);
-    } catch {
-      return null;
-    }
+    const res = await sendMessage({ type: "GET_KEY", email });
+    return res.passphrase;
   }
 
-  /** Store a passphrase for `email`. */
+  /** Store a passphrase for an email. */
   async function setKey(email, passphrase) {
-    if (!_masterPassword) throw new Error("KeyStore is locked");
-    const keys = await loadAll();
-    keys[email.toLowerCase()] = await encryptValue(passphrase, _masterPassword);
-    await saveAll(keys);
+    await sendMessage({ type: "SET_KEY", email, passphrase });
   }
 
-  /** Remove the passphrase for `email`. */
+  /** Remove the passphrase for an email. */
   async function removeKey(email) {
-    const keys = await loadAll();
-    delete keys[email.toLowerCase()];
-    await saveAll(keys);
+    await sendMessage({ type: "REMOVE_KEY", email });
   }
 
   /** Return all stored email→passphrase pairs (decrypted). */
   async function listKeys() {
-    const keys = await loadAll();
-    if (!_masterPassword) return {};
-    const decrypted = {};
-    for (const [email, enc] of Object.entries(keys)) {
-      try {
-        decrypted[email] = await decryptValue(enc, _masterPassword);
-      } catch {
-        // Skip entries that fail to decrypt
-      }
-    }
-    return decrypted;
+    const res = await sendMessage({ type: "LIST_KEYS" });
+    return res.keys;
+  }
+
+  /** Get current settings. */
+  async function getSettings() {
+    const res = await sendMessage({ type: "GET_SETTINGS" });
+    return res.settings;
+  }
+
+  /** Save settings (partial update, merged with existing). */
+  async function saveSettings(settings) {
+    const res = await sendMessage({ type: "SAVE_SETTINGS", settings });
+    return res.settings;
+  }
+
+  /** Generate a new ECDH key pair. Returns the public key (base64). */
+  async function generateKeyPair() {
+    const res = await sendMessage({ type: "GENERATE_KEYPAIR" });
+    return res.publicKey;
+  }
+
+  /** Get the stored ECDH key pair. */
+  async function getKeyPair() {
+    const res = await sendMessage({ type: "GET_KEYPAIR" });
+    return res.keyPair;
+  }
+
+  /** Store a contact's public key. */
+  async function storeContactPublicKey(email, publicKey) {
+    await sendMessage({ type: "STORE_CONTACT_PUBLIC_KEY", email, publicKey });
+  }
+
+  /** Get a contact's public key. */
+  async function getContactPublicKey(email) {
+    const res = await sendMessage({ type: "GET_CONTACT_PUBLIC_KEY", email });
+    return res.publicKey;
+  }
+
+  /** List all stored contact public keys. */
+  async function listContactPublicKeys() {
+    const res = await sendMessage({ type: "LIST_CONTACT_PUBLIC_KEYS" });
+    return res.keys;
+  }
+
+  /** Request ECDH hybrid encryption from background. */
+  async function hybridEncrypt(plaintext, recipientEmail) {
+    const res = await sendMessage({
+      type: "HYBRID_ENCRYPT",
+      plaintext,
+      recipientEmail,
+    });
+    return res.armored;
+  }
+
+  /** Request ECDH hybrid decryption from background. */
+  async function hybridDecrypt(armored) {
+    const res = await sendMessage({ type: "HYBRID_DECRYPT", armored });
+    return res.plaintext;
   }
 
   return {
+    isUnlocked,
+    hasMasterPassword,
+    unlock,
+    lock,
     getKey,
     setKey,
     removeKey,
     listKeys,
-    hasMasterPassword,
-    initMasterPassword,
-    unlock,
-    isUnlocked,
-    STORAGE_KEY,
-    MASTER_CHECK_KEY,
+    getSettings,
+    saveSettings,
+    generateKeyPair,
+    getKeyPair,
+    storeContactPublicKey,
+    getContactPublicKey,
+    listContactPublicKeys,
+    hybridEncrypt,
+    hybridDecrypt,
   };
 })();
 

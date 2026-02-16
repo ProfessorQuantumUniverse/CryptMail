@@ -1,6 +1,6 @@
 /* CryptMail – Content script styles */
 
-/* Encrypt button */
+/* ---- Encrypt button ---- */
 .cryptmail-send-btn {
   background: #1a73e8;
   color: #fff;
@@ -14,13 +14,36 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.15s;
 }
 
 .cryptmail-send-btn:hover {
   background: #1765cc;
 }
 
-/* Subject encryption checkbox */
+.cryptmail-send-btn:active {
+  background: #1256a8;
+}
+
+/* ---- Attach encrypted file button ---- */
+.cryptmail-attach-btn {
+  background: none;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin-left: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.cryptmail-attach-btn:hover {
+  background: #f1f3f4;
+}
+
+/* ---- Subject encryption checkbox ---- */
 .cryptmail-subject-label {
   display: inline-flex;
   align-items: center;
@@ -36,7 +59,7 @@
   cursor: pointer;
 }
 
-/* Notification toast */
+/* ---- Notification toast ---- */
 .cryptmail-notify {
   position: fixed;
   bottom: 24px;
@@ -44,19 +67,26 @@
   background: #323232;
   color: #fff;
   padding: 12px 20px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   z-index: 999999;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   transition: opacity 0.3s;
   max-width: 400px;
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+  animation: cmSlideIn 0.3s ease;
 }
 
 .cryptmail-notify.error {
   background: #d93025;
 }
 
-/* Progress bar */
+@keyframes cmSlideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* ---- Progress bar ---- */
 .cryptmail-progress-container {
   position: fixed;
   bottom: 70px;
@@ -71,6 +101,7 @@
   align-items: center;
   gap: 10px;
   min-width: 300px;
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
 }
 
 .cryptmail-progress-label {
@@ -102,13 +133,13 @@
   text-align: right;
 }
 
-/* Decrypt button for received messages */
+/* ---- Decrypt button ---- */
 .cryptmail-decrypt-btn {
   background: #1a73e8;
   color: #fff;
   border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
+  border-radius: 6px;
+  padding: 8px 18px;
   font-size: 13px;
   cursor: pointer;
   font-weight: 500;
@@ -116,6 +147,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.15s;
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
 }
 
 .cryptmail-decrypt-btn:hover {
@@ -127,122 +160,71 @@
   cursor: wait;
 }
 
-/* Decrypted message block */
+/* ---- Decrypted message block ---- */
 .cryptmail-decrypted {
   white-space: pre-wrap;
-  padding: 8px;
+  padding: 12px;
   background: #e8f5e9;
   border-left: 3px solid #4caf50;
-  border-radius: 4px;
+  border-radius: 6px;
   margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-/* Toggle button */
+/* ---- Toggle button ---- */
 .cryptmail-toggle-btn {
   background: none;
   border: 1px solid #dadce0;
   border-radius: 4px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   font-size: 11px;
   color: #5f6368;
   cursor: pointer;
   margin-bottom: 4px;
+  transition: background 0.15s;
 }
 
 .cryptmail-toggle-btn:hover {
   background: #f1f3f4;
 }
 
-/* Welcome screen overlay */
-.cryptmail-welcome-overlay {
+/* ---- Status indicator ---- */
+.cryptmail-status-indicator {
+  position: fixed;
+  top: 12px;
+  right: 80px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  border-radius: 50%;
+  z-index: 999998;
+  cursor: default;
+  user-select: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+}
+
+.cryptmail-status-indicator.unlocked {
+  background: #e8f5e9;
+  border: 1px solid #4caf50;
+}
+
+.cryptmail-status-indicator.locked {
+  background: #fce8e6;
+  border: 1px solid #d93025;
+}
+
+/* ---- Shadow DOM host ---- */
+#cryptmail-shadow-host {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  width: 0;
+  height: 0;
   z-index: 9999999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cryptmail-welcome-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 32px;
-  max-width: 480px;
-  width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-}
-
-.cryptmail-welcome-header {
-  font-size: 22px;
-  font-weight: 600;
-  color: #202124;
-  margin-bottom: 16px;
-  text-align: center;
-}
-
-.cryptmail-welcome-body {
-  font-size: 14px;
-  color: #3c4043;
-  line-height: 1.6;
-}
-
-.cryptmail-welcome-body p {
-  margin-bottom: 12px;
-}
-
-.cryptmail-welcome-steps {
-  margin: 16px 0;
-}
-
-.cryptmail-welcome-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.cryptmail-step-num {
-  background: #1a73e8;
-  color: #fff;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.cryptmail-welcome-note {
-  background: #fef7e0;
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #5f6368;
-  margin-top: 8px;
-}
-
-.cryptmail-welcome-close {
-  display: block;
-  width: 100%;
-  background: #1a73e8;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 12px;
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-top: 20px;
-}
-
-.cryptmail-welcome-close:hover {
-  background: #1765cc;
+  pointer-events: none;
 }

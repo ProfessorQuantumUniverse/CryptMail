@@ -1,15 +1,12 @@
 /**
- * CryptMail - Multi-layer AES-GCM encryption module.
+ * CryptMail – AES-256-GCM Encryption Module
  *
- * Encrypts plaintext multiple rounds using AES-256-GCM with a key derived
- * from a shared passphrase via PBKDF2.  Each round uses a fresh random IV
- * and salt so that identical plaintexts produce different ciphertexts.
+ * Single-round AES-256-GCM encryption with PBKDF2 key derivation.
+ * Also supports ECDH hybrid encryption and file encryption.
  *
- * Wire format (base64-encoded JSON):
- *   { "v":1, "rounds":<n>, "params":[ { "salt":<hex>, "iv":<hex> }, … ], "data":<hex> }
- *
- * params[0] belongs to the innermost round, params[rounds-1] to the outermost.
- * "data" is the final ciphertext after all rounds.
+ * Envelope wire format (base64-encoded JSON):
+ *   v1 (symmetric): { "v":1, "rounds":1, "params":[{"salt":"<hex>","iv":"<hex>"}], "data":"<hex>" }
+ *   v2 (ECDH):      { "v":2, "mode":"ecdh", "senderPublicKey":"<b64>", "iv":"<hex>", "data":"<hex>" }
  */
 
 /* exported CryptMail */
@@ -19,10 +16,10 @@ const CryptMail = (() => {
   const ALGO = "AES-GCM";
   const KEY_LENGTH = 256;
   const PBKDF2_ITERATIONS = 1000000;
-  const DEFAULT_ROUNDS = 1;
   const SALT_BYTES = 32;
   const ENVELOPE_PREFIX = "-----BEGIN CRYPTMAIL-----";
   const ENVELOPE_SUFFIX = "-----END CRYPTMAIL-----";
+  const SUBJECT_PREFIX = "[CM]";
 
   /* ---- helpers ---- */
 
@@ -54,6 +51,45 @@ const CryptMail = (() => {
     return new TextDecoder().decode(buf);
   }
 
+  /** UTF-8 safe string → base64 (replaces deprecated unescape/escape) */
+  function utf8ToBase64(str) {
+    const bytes = textToBytes(str);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  /** Base64 → UTF-8 string */
+  function base64ToUtf8(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytesToText(bytes);
+  }
+
+  /** Binary Uint8Array → base64 */
+  function uint8ToBase64(uint8) {
+    let binary = "";
+    for (let i = 0; i < uint8.length; i++) {
+      binary += String.fromCharCode(uint8[i]);
+    }
+    return btoa(binary);
+  }
+
+  /** Base64 → Uint8Array */
+  function base64ToUint8(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
   /* ---- key derivation ---- */
 
   async function deriveKey(passphrase, salt) {
@@ -65,7 +101,12 @@ const CryptMail = (() => {
       ["deriveKey"]
     );
     return crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+      {
+        name: "PBKDF2",
+        salt,
+        iterations: PBKDF2_ITERATIONS,
+        hash: "SHA-256",
+      },
       raw,
       { name: ALGO, length: KEY_LENGTH },
       false,
@@ -73,49 +114,61 @@ const CryptMail = (() => {
     );
   }
 
-  /* ---- public API ---- */
+  /* ---- Symmetric AES-256-GCM encryption (single round) ---- */
 
   /**
-   * Encrypt `plaintext` with `passphrase` for `rounds` layers.
-   * Returns the armored envelope string.
-   * @param {function} [onProgress] – optional callback(percent) called after each round.
+   * Encrypt plaintext with passphrase.
+   *
+   * Supports multiple call signatures for backward compatibility:
+   *   encrypt(plaintext, passphrase)
+   *   encrypt(plaintext, passphrase, onProgress)
+   *   encrypt(plaintext, passphrase, rounds, onProgress)  ← rounds ignored
+   *   encrypt(plaintext, passphrase, { onProgress, senderPublicKey, encryptedSubject })
    */
-  async function encrypt(plaintext, passphrase, rounds, onProgress) {
+  async function encrypt(plaintext, passphrase, thirdArg, fourthArg) {
     if (!plaintext || !passphrase) {
       throw new Error("plaintext and passphrase are required");
     }
-    rounds = rounds || DEFAULT_ROUNDS;
 
-    let current = textToBytes(plaintext);
-    const params = [];
+    let onProgress = null;
+    let options = {};
 
-    for (let i = 0; i < rounds; i++) {
-      const salt = randomBytes(SALT_BYTES);
-      const iv = randomBytes(12);
-      const key = await deriveKey(passphrase, salt);
-      current = new Uint8Array(
-        await crypto.subtle.encrypt({ name: ALGO, iv }, key, current)
-      );
-      params.push({ salt: hexEncode(salt), iv: hexEncode(iv) });
-      if (onProgress) onProgress(Math.round(((i + 1) / rounds) * 100));
+    if (typeof thirdArg === "number") {
+      // Legacy: encrypt(text, pass, rounds, onProgress) – rounds ignored
+      onProgress = typeof fourthArg === "function" ? fourthArg : null;
+    } else if (typeof thirdArg === "function") {
+      // Legacy: encrypt(text, pass, onProgress)
+      onProgress = thirdArg;
+    } else if (thirdArg && typeof thirdArg === "object") {
+      options = thirdArg;
+      onProgress = options.onProgress || null;
     }
+
+    const salt = randomBytes(SALT_BYTES);
+    const iv = randomBytes(12);
+    const key = await deriveKey(passphrase, salt);
+    const ciphertext = new Uint8Array(
+      await crypto.subtle.encrypt({ name: ALGO, iv }, key, textToBytes(plaintext))
+    );
+
+    if (onProgress) onProgress(100);
 
     const envelope = {
       v: 1,
-      rounds,
-      params,
-      data: hexEncode(current),
+      rounds: 1,
+      params: [{ salt: hexEncode(salt), iv: hexEncode(iv) }],
+      data: hexEncode(ciphertext),
     };
 
-    const json = JSON.stringify(envelope);
-    const b64 = btoa(unescape(encodeURIComponent(json)));
-    return `${ENVELOPE_PREFIX}\n${b64}\n${ENVELOPE_SUFFIX}`;
+    // Optional metadata
+    if (options.senderPublicKey) envelope.senderPublicKey = options.senderPublicKey;
+    if (options.encryptedSubject) envelope.encryptedSubject = options.encryptedSubject;
+
+    return `${ENVELOPE_PREFIX}\n${utf8ToBase64(JSON.stringify(envelope))}\n${ENVELOPE_SUFFIX}`;
   }
 
   /**
-   * Decrypt an armored envelope string with `passphrase`.
-   * Returns the original plaintext.
-   * @param {function} [onProgress] – optional callback(percent) called after each round.
+   * Decrypt an armored envelope. Backward-compatible with multi-round envelopes.
    */
   async function decrypt(armored, passphrase, onProgress) {
     if (!armored || !passphrase) {
@@ -126,9 +179,11 @@ const CryptMail = (() => {
       .replace(ENVELOPE_PREFIX, "")
       .replace(ENVELOPE_SUFFIX, "")
       .trim();
-    const json = decodeURIComponent(escape(atob(b64)));
-    const envelope = JSON.parse(json);
+    const envelope = JSON.parse(base64ToUtf8(b64));
 
+    if (envelope.v === 2 && envelope.mode === "ecdh") {
+      throw new Error("ECDH envelope requires hybrid decryption via background service.");
+    }
     if (envelope.v !== 1) {
       throw new Error("Unsupported envelope version: " + envelope.v);
     }
@@ -136,7 +191,7 @@ const CryptMail = (() => {
     let current = hexDecode(envelope.data);
     const total = envelope.params.length;
 
-    // Peel layers from outermost (last param) to innermost (first param)
+    // Backward-compatible: peel layers outermost → innermost
     for (let i = envelope.params.length - 1; i >= 0; i--) {
       const p = envelope.params[i];
       const salt = hexDecode(p.salt);
@@ -162,14 +217,34 @@ const CryptMail = (() => {
     );
   }
 
+  /**
+   * Extract metadata from an armored envelope without decrypting.
+   */
+  function getEnvelopeInfo(armored) {
+    try {
+      const b64 = armored
+        .replace(ENVELOPE_PREFIX, "")
+        .replace(ENVELOPE_SUFFIX, "")
+        .trim();
+      const envelope = JSON.parse(base64ToUtf8(b64));
+      return {
+        version: envelope.v,
+        rounds: envelope.rounds || 1,
+        mode: envelope.mode || "passphrase",
+        senderPublicKey: envelope.senderPublicKey || null,
+        hasEncryptedSubject: !!envelope.encryptedSubject,
+        encryptedSubject: envelope.encryptedSubject || null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /* ---- Compact subject encryption ---- */
 
-  const SUBJECT_PREFIX = "[CM]";
-
   /**
-   * Encrypt a short subject line into a compact token.
+   * Encrypt a short subject line.
    * Format: [CM]<base64(salt‖iv‖ciphertext)>
-   * Uses a single round with the same AES-256-GCM + PBKDF2 key derivation.
    */
   async function encryptSubject(plaintext, passphrase) {
     if (!plaintext || !passphrase) {
@@ -179,31 +254,32 @@ const CryptMail = (() => {
     const iv = randomBytes(12);
     const key = await deriveKey(passphrase, salt);
     const cipherBuf = new Uint8Array(
-      await crypto.subtle.encrypt({ name: ALGO, iv }, key, textToBytes(plaintext))
+      await crypto.subtle.encrypt(
+        { name: ALGO, iv },
+        key,
+        textToBytes(plaintext)
+      )
     );
-    // Pack salt(32) + iv(12) + ciphertext into one buffer
     const packed = new Uint8Array(salt.length + iv.length + cipherBuf.length);
     packed.set(salt, 0);
     packed.set(iv, salt.length);
     packed.set(cipherBuf, salt.length + iv.length);
-    const b64 = btoa(String.fromCharCode(...packed));
-    return SUBJECT_PREFIX + b64;
+    return SUBJECT_PREFIX + uint8ToBase64(packed);
   }
 
   /**
-   * Decrypt a compact subject token back to the original subject.
+   * Decrypt a compact subject token.
    */
   async function decryptSubject(token, passphrase) {
     if (!token || !passphrase) {
       throw new Error("token and passphrase are required");
     }
-    const b64 = token.startsWith(SUBJECT_PREFIX)
-      ? token.slice(SUBJECT_PREFIX.length)
-      : token;
-    const raw = atob(b64);
-    const packed = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) packed[i] = raw.charCodeAt(i);
+    let b64 = token;
+    if (b64.startsWith(SUBJECT_PREFIX)) b64 = b64.slice(SUBJECT_PREFIX.length);
+    // Strip any whitespace or leading emoji that might be prepended
+    b64 = b64.trim();
 
+    const packed = base64ToUint8(b64);
     const salt = packed.slice(0, SALT_BYTES);
     const iv = packed.slice(SALT_BYTES, SALT_BYTES + 12);
     const ciphertext = packed.slice(SALT_BYTES + 12);
@@ -219,23 +295,118 @@ const CryptMail = (() => {
    * Check whether a string looks like a CryptMail encrypted subject.
    */
   function isSubjectEncrypted(text) {
-    return typeof text === "string" && text.startsWith(SUBJECT_PREFIX);
+    return typeof text === "string" && text.includes(SUBJECT_PREFIX);
   }
+
+  /* ---- ECDH Key Pair Generation ---- */
+
+  async function generateKeyPair() {
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: "P-256" },
+      true,
+      ["deriveKey", "deriveBits"]
+    );
+    const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
+    const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+    return {
+      publicKey: uint8ToBase64(new Uint8Array(publicKeyRaw)),
+      privateKey: JSON.stringify(privateKeyJwk),
+    };
+  }
+
+  /* ---- File Encryption ---- */
+
+  /**
+   * Encrypt a file (ArrayBuffer) with a passphrase.
+   * Returns a JSON string containing the encrypted file envelope.
+   */
+  async function encryptFile(arrayBuffer, filename, mimeType, passphrase, onProgress) {
+    if (!arrayBuffer || !passphrase) {
+      throw new Error("file data and passphrase are required");
+    }
+    const salt = randomBytes(SALT_BYTES);
+    const iv = randomBytes(12);
+    const key = await deriveKey(passphrase, salt);
+    const data = new Uint8Array(arrayBuffer);
+    const ciphertext = new Uint8Array(
+      await crypto.subtle.encrypt({ name: ALGO, iv }, key, data)
+    );
+
+    if (onProgress) onProgress(100);
+
+    return JSON.stringify({
+      v: 1,
+      type: "file",
+      filename: filename || "unknown",
+      mimeType: mimeType || "application/octet-stream",
+      salt: hexEncode(salt),
+      iv: hexEncode(iv),
+      data: uint8ToBase64(ciphertext),
+    });
+  }
+
+  /**
+   * Decrypt a CryptMail file envelope.
+   * Returns { data: ArrayBuffer, filename: string, mimeType: string }.
+   */
+  async function decryptFile(jsonString, passphrase, onProgress) {
+    if (!jsonString || !passphrase) {
+      throw new Error("encrypted file data and passphrase are required");
+    }
+    const envelope = JSON.parse(jsonString);
+    if (envelope.type !== "file") {
+      throw new Error("Not a CryptMail file envelope");
+    }
+    const salt = hexDecode(envelope.salt);
+    const iv = hexDecode(envelope.iv);
+    const ciphertext = base64ToUint8(envelope.data);
+    const key = await deriveKey(passphrase, salt);
+    const plainBuf = await crypto.subtle.decrypt(
+      { name: ALGO, iv },
+      key,
+      ciphertext
+    );
+
+    if (onProgress) onProgress(100);
+
+    return {
+      data: plainBuf,
+      filename: envelope.filename,
+      mimeType: envelope.mimeType,
+    };
+  }
+
+  /* ---- Public API ---- */
 
   return {
     encrypt,
     decrypt,
     isEncrypted,
+    getEnvelopeInfo,
     encryptSubject,
     decryptSubject,
     isSubjectEncrypted,
+    generateKeyPair,
+    encryptFile,
+    decryptFile,
+    uint8ToBase64,
+    base64ToUint8,
     ENVELOPE_PREFIX,
     ENVELOPE_SUFFIX,
     SUBJECT_PREFIX,
-    DEFAULT_ROUNDS,
   };
 })();
 
+// Node.js / test compatibility
 if (typeof module !== "undefined" && module.exports) {
   module.exports = CryptMail;
+}
+
+// Service worker compatibility
+if (typeof self !== "undefined") {
+  try {
+    self.CryptMail = CryptMail;
+  } catch {
+    /* ignore in strict contexts */
+  }
 }

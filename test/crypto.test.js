@@ -20,18 +20,6 @@ if (!globalThis.btoa) {
 if (!globalThis.atob) {
   globalThis.atob = (s) => Buffer.from(s, "base64").toString("binary");
 }
-if (!globalThis.unescape) {
-  globalThis.unescape = (s) =>
-    s.replace(/%([0-9A-Fa-f]{2})/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    );
-}
-if (!globalThis.escape) {
-  globalThis.escape = (s) =>
-    s.replace(/[^\x20-\x7E]/g, (c) =>
-      "%" + c.charCodeAt(0).toString(16).padStart(2, "0").toUpperCase()
-    );
-}
 
 const CryptMail = require("../src/crypto.js");
 
@@ -54,31 +42,46 @@ async function run() {
   // --- isEncrypted ---
   console.log("isEncrypted:");
   assert(
-    CryptMail.isEncrypted("-----BEGIN CRYPTMAIL-----\nabc\n-----END CRYPTMAIL-----"),
+    CryptMail.isEncrypted(
+      "-----BEGIN CRYPTMAIL-----\nabc\n-----END CRYPTMAIL-----"
+    ),
     "recognises envelope"
   );
   assert(!CryptMail.isEncrypted("Hello world"), "rejects plain text");
   assert(!CryptMail.isEncrypted(null), "rejects null");
   assert(!CryptMail.isEncrypted(123), "rejects number");
 
-  // --- encrypt produces envelope ---
-  console.log("\nencrypt:");
-  const armored = await CryptMail.encrypt("Hello, World!", "secret", 3);
+  // --- encrypt produces envelope (single round) ---
+  console.log("\nencrypt (single round):");
+  const armored = await CryptMail.encrypt("Hello, World!", "secret");
   assert(armored.startsWith(CryptMail.ENVELOPE_PREFIX), "starts with prefix");
   assert(armored.endsWith(CryptMail.ENVELOPE_SUFFIX), "ends with suffix");
   assert(CryptMail.isEncrypted(armored), "is recognised as encrypted");
   assert(!armored.includes("Hello, World!"), "plaintext not visible");
 
+  // Verify it's a single round
+  const info = CryptMail.getEnvelopeInfo(armored);
+  assert(info !== null, "getEnvelopeInfo returns data");
+  assert(info.version === 1, "envelope version is 1");
+  assert(info.rounds === 1, "envelope uses 1 round");
+  assert(info.mode === "passphrase", 'mode is "passphrase"');
+
   // --- decrypt round-trip ---
   console.log("\ndecrypt:");
   const decrypted = await CryptMail.decrypt(armored, "secret");
-  assert(decrypted === "Hello, World!", "round-trip 3 rounds matches");
+  assert(decrypted === "Hello, World!", "round-trip matches");
 
-  // --- round-trip with default rounds ---
-  console.log("\ndefault rounds:");
-  const armored100 = await CryptMail.encrypt("Test default", "pw123");
-  const dec100 = await CryptMail.decrypt(armored100, "pw123");
-  assert(dec100 === "Test default", "round-trip default (1) rounds matches");
+  // --- encrypt with legacy rounds parameter (ignored) ---
+  console.log("\nlegacy rounds parameter:");
+  const armoredLegacy = await CryptMail.encrypt(
+    "Legacy test",
+    "secret",
+    5
+  );
+  const infoLegacy = CryptMail.getEnvelopeInfo(armoredLegacy);
+  assert(infoLegacy.rounds === 1, "rounds parameter is ignored (still 1)");
+  const decLegacy = await CryptMail.decrypt(armoredLegacy, "secret");
+  assert(decLegacy === "Legacy test", "legacy call round-trip works");
 
   // --- wrong passphrase ---
   console.log("\nwrong passphrase:");
@@ -111,52 +114,95 @@ async function run() {
   // --- unicode support ---
   console.log("\nunicode:");
   const uni = "Ünïcödé 🎉 日本語";
-  const armoredUni = await CryptMail.encrypt(uni, "key", 5);
+  const armoredUni = await CryptMail.encrypt(uni, "key");
   const decUni = await CryptMail.decrypt(armoredUni, "key");
   assert(decUni === uni, "unicode round-trip matches");
 
   // --- different ciphertext for same input ---
   console.log("\nrandomness:");
-  const a1 = await CryptMail.encrypt("same", "key", 2);
-  const a2 = await CryptMail.encrypt("same", "key", 2);
+  const a1 = await CryptMail.encrypt("same", "key");
+  const a2 = await CryptMail.encrypt("same", "key");
   assert(a1 !== a2, "two encryptions of same text differ");
 
-  // --- progress callback for encrypt ---
-  console.log("\nprogress callback (encrypt):");
+  // --- progress callback ---
+  console.log("\nprogress callback (single round):");
   const encProgress = [];
-  await CryptMail.encrypt("progress test", "key", 5, (p) => encProgress.push(p));
-  assert(encProgress.length === 5, "encrypt progress called for each round");
-  assert(encProgress[encProgress.length - 1] === 100, "encrypt progress ends at 100%");
-  assert(encProgress[0] === Math.round(100 / 5), "encrypt first round reports correct percentage");
+  await CryptMail.encrypt("progress test", "key", (p) => encProgress.push(p));
+  assert(encProgress.length === 1, "encrypt progress called once (single round)");
+  assert(encProgress[0] === 100, "encrypt progress reports 100%");
 
   // --- progress callback for decrypt ---
   console.log("\nprogress callback (decrypt):");
-  const armoredProg = await CryptMail.encrypt("progress test", "key", 5);
+  const armoredProg = await CryptMail.encrypt("progress test", "key");
   const decProgress = [];
   await CryptMail.decrypt(armoredProg, "key", (p) => decProgress.push(p));
-  assert(decProgress.length === 5, "decrypt progress called for each round");
-  assert(decProgress[decProgress.length - 1] === 100, "decrypt progress ends at 100%");
+  assert(decProgress.length === 1, "decrypt progress called once (single round)");
+  assert(decProgress[0] === 100, "decrypt progress reports 100%");
 
-  // --- encrypt/decrypt without progress callback still works ---
-  console.log("\nno progress callback:");
-  const armoredNoProg = await CryptMail.encrypt("no progress", "key", 3);
-  const decNoProg = await CryptMail.decrypt(armoredNoProg, "key");
-  assert(decNoProg === "no progress", "round-trip without progress callback works");
+  // --- progress as 4th arg (legacy) ---
+  console.log("\nprogress as legacy 4th arg:");
+  const legProgress = [];
+  await CryptMail.encrypt("legacy progress", "key", 3, (p) =>
+    legProgress.push(p)
+  );
+  assert(
+    legProgress.length === 1,
+    "legacy progress called once despite rounds=3"
+  );
+  assert(legProgress[0] === 100, "legacy progress reports 100%");
+
+  // --- encrypt with options object ---
+  console.log("\noptions object:");
+  const optProgress = [];
+  const armoredOpt = await CryptMail.encrypt("options test", "key", {
+    onProgress: (p) => optProgress.push(p),
+    senderPublicKey: "test-key-123",
+    encryptedSubject: "[CM]encrypted-subject",
+  });
+  assert(optProgress[0] === 100, "options onProgress works");
+  const optInfo = CryptMail.getEnvelopeInfo(armoredOpt);
+  assert(
+    optInfo.senderPublicKey === "test-key-123",
+    "senderPublicKey is stored in envelope"
+  );
+  assert(
+    optInfo.encryptedSubject === "[CM]encrypted-subject",
+    "encryptedSubject is stored in envelope"
+  );
+  assert(optInfo.hasEncryptedSubject === true, "hasEncryptedSubject flag is true");
+
+  // Still decrypts correctly
+  const decOpt = await CryptMail.decrypt(armoredOpt, "key");
+  assert(decOpt === "options test", "options envelope decrypts correctly");
 
   // --- subject encryption ---
   console.log("\nsubject encryption:");
-  const subjectToken = await CryptMail.encryptSubject("Meeting tomorrow", "secret");
-  assert(subjectToken.startsWith(CryptMail.SUBJECT_PREFIX), "subject token has [CM] prefix");
-  assert(CryptMail.isSubjectEncrypted(subjectToken), "isSubjectEncrypted recognises token");
-  assert(!CryptMail.isSubjectEncrypted("Normal subject"), "isSubjectEncrypted rejects plain text");
+  const subjectToken = await CryptMail.encryptSubject(
+    "Meeting tomorrow",
+    "secret"
+  );
+  assert(
+    subjectToken.startsWith(CryptMail.SUBJECT_PREFIX),
+    "subject token has [CM] prefix"
+  );
+  assert(
+    CryptMail.isSubjectEncrypted(subjectToken),
+    "isSubjectEncrypted recognises token"
+  );
+  assert(
+    !CryptMail.isSubjectEncrypted("Normal subject"),
+    "isSubjectEncrypted rejects plain text"
+  );
 
   const subjectPlain = await CryptMail.decryptSubject(subjectToken, "secret");
   assert(subjectPlain === "Meeting tomorrow", "subject round-trip matches");
 
-  // Subject token must be short enough for email subject lines
-  assert(subjectToken.length < 250, "subject token fits in ~250 chars (got " + subjectToken.length + ")");
+  assert(
+    subjectToken.length < 250,
+    "subject token fits in ~250 chars (got " + subjectToken.length + ")"
+  );
 
-  // Wrong passphrase on subject should throw
+  // Wrong passphrase on subject
   let subjectWrongKey = false;
   try {
     await CryptMail.decryptSubject(subjectToken, "wrong");
@@ -170,6 +216,139 @@ async function run() {
   const uniSubToken = await CryptMail.encryptSubject(uniSubject, "key");
   const uniSubDec = await CryptMail.decryptSubject(uniSubToken, "key");
   assert(uniSubDec === uniSubject, "unicode subject round-trip matches");
+
+  // --- getEnvelopeInfo ---
+  console.log("\ngetEnvelopeInfo:");
+  const infoNull = CryptMail.getEnvelopeInfo("not an envelope");
+  assert(infoNull === null, "returns null for invalid input");
+
+  // --- ECDH key pair generation ---
+  console.log("\nECDH key pair:");
+  const kp = await CryptMail.generateKeyPair();
+  assert(kp.publicKey && kp.publicKey.length > 0, "generates public key");
+  assert(kp.privateKey && kp.privateKey.length > 0, "generates private key (JWK)");
+  const jwk = JSON.parse(kp.privateKey);
+  assert(jwk.kty === "EC", "private key is EC type");
+  assert(jwk.crv === "P-256", "private key uses P-256 curve");
+
+  // --- File encryption ---
+  console.log("\nfile encryption:");
+  const fileData = new TextEncoder().encode("Hello file content!");
+  const encFile = await CryptMail.encryptFile(
+    fileData.buffer,
+    "test.txt",
+    "text/plain",
+    "filepass"
+  );
+  assert(typeof encFile === "string", "encryptFile returns string");
+  const encFileObj = JSON.parse(encFile);
+  assert(encFileObj.type === "file", 'envelope has type "file"');
+  assert(encFileObj.filename === "test.txt", "preserves filename");
+  assert(encFileObj.mimeType === "text/plain", "preserves mimeType");
+
+  // Decrypt file
+  const decFile = await CryptMail.decryptFile(encFile, "filepass");
+  assert(decFile.filename === "test.txt", "decrypted filename matches");
+  assert(decFile.mimeType === "text/plain", "decrypted mimeType matches");
+  const decFileText = new TextDecoder().decode(decFile.data);
+  assert(
+    decFileText === "Hello file content!",
+    "file content round-trip matches"
+  );
+
+  // Wrong passphrase for file
+  let fileWrongKey = false;
+  try {
+    await CryptMail.decryptFile(encFile, "wrong");
+  } catch {
+    fileWrongKey = true;
+  }
+  assert(fileWrongKey, "file decryption with wrong key throws");
+
+  // --- backward compatibility: multi-round decrypt ---
+  console.log("\nbackward compatibility (multi-round decrypt):");
+
+  // Create a legacy 3-round envelope manually
+  // We'll just verify that the structure is parseable
+  // (In practice, old encrypted messages can still be decrypted)
+  const legacyEncrypt = async (text, pass, rounds) => {
+    const ALGO = "AES-GCM";
+    const PBKDF2_ITERATIONS = 1000000;
+    const SALT_BYTES = 32;
+
+    function randomBytes(n) {
+      const buf = new Uint8Array(n);
+      crypto.getRandomValues(buf);
+      return buf;
+    }
+    function hexEncode(buf) {
+      return Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    let current = new TextEncoder().encode(text);
+    const params = [];
+
+    for (let i = 0; i < rounds; i++) {
+      const salt = randomBytes(SALT_BYTES);
+      const iv = randomBytes(12);
+      const raw = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(pass),
+        "PBKDF2",
+        false,
+        ["deriveKey"]
+      );
+      const key = await crypto.subtle.deriveKey(
+        {
+          name: "PBKDF2",
+          salt,
+          iterations: PBKDF2_ITERATIONS,
+          hash: "SHA-256",
+        },
+        raw,
+        { name: ALGO, length: 256 },
+        false,
+        ["encrypt"]
+      );
+      current = new Uint8Array(
+        await crypto.subtle.encrypt({ name: ALGO, iv }, key, current)
+      );
+      params.push({ salt: hexEncode(salt), iv: hexEncode(iv) });
+    }
+
+    const envelope = { v: 1, rounds, params, data: hexEncode(current) };
+    const json = JSON.stringify(envelope);
+    const bytes = new TextEncoder().encode(json);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const b64 = btoa(binary);
+    return `-----BEGIN CRYPTMAIL-----\n${b64}\n-----END CRYPTMAIL-----`;
+  };
+
+  const legacyArmored = await legacyEncrypt("Legacy 3-round message", "pass123", 3);
+  const legacyDecrypted = await CryptMail.decrypt(legacyArmored, "pass123");
+  assert(
+    legacyDecrypted === "Legacy 3-round message",
+    "3-round legacy envelope decrypts correctly"
+  );
+
+  // Multi-round progress callback
+  const legacyProgress = [];
+  await CryptMail.decrypt(legacyArmored, "pass123", (p) =>
+    legacyProgress.push(p)
+  );
+  assert(
+    legacyProgress.length === 3,
+    "legacy decrypt progress called for each round"
+  );
+  assert(
+    legacyProgress[legacyProgress.length - 1] === 100,
+    "legacy decrypt progress reaches 100%"
+  );
 
   // --- summary ---
   console.log(`\n${passed} passed, ${failed} failed`);
