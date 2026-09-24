@@ -2,6 +2,13 @@
 
 A Chrome Extension for sending and receiving multi-layer encrypted emails through Gmail.
 
+<!-- INSTALL BUTTONS START -->
+<p align="center">
+  <a href="https://github.com/ProfessorQuantumUniverse/CryptMail/releases/latest"><img src="https://img.shields.io/badge/Download-Chrome%20Extension-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Download the extension" height="40"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/How%20to-install-555555?style=for-the-badge&logo=github&logoColor=white" alt="How to install" height="40"></a>
+</p>
+<!-- INSTALL BUTTONS END -->
+
 ## How It Works
 
 1. **Key Exchange** – You and your contact agree on a shared passphrase (out of band).
