@@ -2,6 +2,19 @@
 
 A Chrome Extension for sending and receiving multi-layer encrypted emails through Gmail.
 
+> [!CAUTION]
+> ## ⚠️ Experiment – do not rely on this for real secrets
+> CryptMail is a **personal experiment** and is **not maintained**. Its cryptography is a custom
+> construction that has **never been reviewed or audited** by anyone with a cryptography background.
+> It may contain flaws that let others read or forge your messages, and messages may become
+> unreadable after browser or extension changes.
+>
+> **If you need encrypted email, use an established, audited tool instead** – for example
+> [Proton Mail](https://proton.me/mail), [Tuta](https://tuta.com) or OpenPGP via
+> [Thunderbird](https://www.thunderbird.net/) / [Mailvelope](https://mailvelope.com/).
+>
+> *Deutsch: Persönliches Experiment, nicht gewartet, Kryptografie nie geprüft. Nicht für echte Geheimnisse verwenden.*
+
 <!-- INSTALL BUTTONS START -->
 <p align="center">
   <a href="https://github.com/ProfessorQuantumUniverse/CryptMail/releases/latest"><img src="https://img.shields.io/badge/Download-Chrome%20Extension-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Download the extension" height="40"></a>
