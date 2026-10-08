@@ -1,3 +1,9 @@
+> [!NOTE]
+> **Archived – no longer maintained.** This was a personal experiment. Its cryptography was never audited – see the warning below.
+> The code stays available for reference, but there will be no updates or security fixes.
+>
+> *Archiviert – wird nicht mehr gepflegt. Persönliches Experiment, Kryptografie nie geprüft – siehe Warnung unten.*
+
 # CryptMail
 
 A Chrome Extension for sending and receiving multi-layer encrypted emails through Gmail.
